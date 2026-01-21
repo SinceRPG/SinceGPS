@@ -1,0 +1,23 @@
+settings:
+  # Tự động cập nhật nếu mục tiêu di chuyển (blocks)
+  dynamic-update-threshold: 3.0
+  max-nodes: 12000
+  fuzzy-match-threshold: 0.6
+  # Công thức khoảng cách đến nơi
+  arrival-formula: "1.5"
+
+visuals:
+  # Chế độ: PARTICLE
+  mode: PARTICLE
+
+  # Loại hạt: VILLAGER_HAPPY (Xanh lá), FLAME (Lửa), END_ROD (Trắng), etc.
+  particle: HAPPY_VILLAGER
+
+  # Khoảng cách giữa các hạt (Càng nhỏ càng mượt nhưng tốn resource hơn)
+  # 0.25 là mức cân bằng đẹp nhất cho đường cong
+  particle-gap: 0.25
+
+  # Tầm nhìn xa
+  view-distance: 25.0
+
+waypoints: { }

@@ -1,29 +1,27 @@
 prefix: "<gradient:#00FFAA:#00AAFF><bold>SinceGPS</bold></gradient> <gray>» "
 
-# SYSTEM
 reload-success: "<green>Đã tải lại cấu hình và database."
-no-permission: "<red>Bạn không có quyền thực hiện lệnh này."
-
-# USER NAVIGATION
 path-found: "<green>Đã tìm thấy đường đến <target>! <gray>(<distance>m)"
 path-not-found: "<red>Không tìm thấy đường đi khả thi."
 node-not-found: "<red>Không tìm thấy địa điểm này."
+correction: "<yellow>Ý bạn là <gold><guess><yellow>? <click:run_command:'/gps to <guess_raw>'><hover:show_text:'&eBấm để đi đến &f<guess_raw>'><aqua>[CLICK ĐỂ ĐI]</hover></click>"
 stopped: "<red>Đã tắt GPS."
 arrived: "<yellow><bold>BẠN ĐÃ ĐẾN NƠI!"
+no-permission: "<red>Bạn không có quyền đi đến khu vực này."
 rerouting: "<gray><i>Đang tính lại đường..."
-correction: "<yellow>Ý bạn là <gold><guess><yellow>? <click:run_command:'/gps to <guess_raw>'><hover:show_text:'&eBấm để đi đến &f<guess_raw>'><aqua>[CLICK ĐỂ ĐI]</hover></click>"
 
-# LIST
 list-header: "<gradient:#FFD700:#FFA500><bold> DANH SÁCH ĐỊA ĐIỂM </bold></gradient>"
 list-item: " <gray>- <white><name> <dark_gray>[<group>] <green><click:run_command:'/gps to <id>'><hover:show_text:'&7Click để đi đến &f<name>'>[ĐI NGAY]</hover></click>"
 
-# ADMIN TOOLS
 name-set: "<green>Đã đổi tên hiển thị của Node <id> thành: <name>"
+group-set: "<green>Đã chuyển Node <yellow><node> <green>sang nhóm: <aqua><group>"
+group-not-found: "<red>Nhóm '<group>' không tồn tại trong config.yml!"
+
 record-started: "<green><bold>REC:</bold> <gray>Bắt đầu ghi hình... <yellow>(Hãy chạy bộ đến đích)"
 record-stopped: "<red><bold>REC:</bold> <gray>Đã dừng. <yellow>Đã tối ưu và xóa <count> node thừa."
 record-too-short: "<red><bold>REC:</bold> <gray>Quãng đường quá ngắn, đã hủy lưu."
+record-snap: "<yellow>Đã bắt dính vào đường cũ (Node <id>)"
 
-# SUMMARY BUTTONS
 record-summary-start: "<gray>├ Điểm đầu (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên điểm xuất phát'>[ĐẶT TÊN]</hover></click>"
 record-summary-end: "<gray>└ Điểm cuối (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên điểm đích'>[ĐẶT TÊN]</hover></click>"
 

@@ -6,7 +6,8 @@ import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import net.danh.sinceGPS.SinceGPS;
 import net.danh.sinceGPS.core.Node;
 import net.danh.sinceGPS.utils.ColorUtils;
-import org.apache.commons.lang3.StringUtils;
+import net.danh.sinceGPS.utils.SimilarityUtils;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 
 public class GPSCommand {
@@ -61,9 +62,45 @@ public class GPSCommand {
                                 return 1;
                             })
                     )
+                    .then(Commands.literal("setgroup")
+                            .requires(source -> source.getSender().hasPermission("gps.admin"))
+                            .then(Commands.argument("target_id", StringArgumentType.word())
+                                    .suggests((ctx, builder) -> {
+                                        for (Node n : plugin.getGraphManager().getNodes())
+                                            builder.suggest(String.valueOf(n.getId()));
+                                        return builder.buildFuture();
+                                    })
+                                    .then(Commands.argument("group_name", StringArgumentType.word())
+                                            .suggests((ctx, builder) -> {
+                                                ConfigurationSection sec = plugin.getCfg().getSection("groups");
+                                                if (sec != null)
+                                                    for (String key : sec.getKeys(false)) builder.suggest(key);
+                                                return builder.buildFuture();
+                                            })
+                                            .executes(ctx -> {
+                                                if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
+                                                String targetStr = StringArgumentType.getString(ctx, "target_id");
+                                                String groupName = StringArgumentType.getString(ctx, "group_name");
+                                                if (plugin.getCfg().getSection("groups." + groupName) == null) {
+                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("group-not-found").replace("<group>", groupName)));
+                                                    return 0;
+                                                }
+                                                Node target = findNode(targetStr);
+                                                if (target != null) {
+                                                    target.setGroup(groupName);
+                                                    plugin.getGraphManager().save();
+                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("group-set").replace("<node>", getFriendlyId(target)).replace("<group>", groupName)));
+                                                } else {
+                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("node-not-found")));
+                                                }
+                                                return 1;
+                                            })
+                                    )
+                            )
+                    )
                     .then(Commands.literal("setname")
                             .requires(source -> source.getSender().hasPermission("gps.admin"))
-                            .then(Commands.argument("node_id", StringArgumentType.word())
+                            .then(Commands.argument("target_id", StringArgumentType.word())
                                     .suggests((ctx, builder) -> {
                                         for (Node n : plugin.getGraphManager().getNodes()) {
                                             if (n.getDisplayName().startsWith("node_")) continue;
@@ -74,19 +111,13 @@ public class GPSCommand {
                                     .then(Commands.argument("display_name", StringArgumentType.greedyString())
                                             .executes(ctx -> {
                                                 if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
-                                                String nodeId = StringArgumentType.getString(ctx, "node_id");
+                                                String targetStr = StringArgumentType.getString(ctx, "target_id");
                                                 String display = StringArgumentType.getString(ctx, "display_name");
-                                                Node target = plugin.getGraphManager().getNode(nodeId);
-                                                if (target == null) {
-                                                    try {
-                                                        target = plugin.getGraphManager().getNode(Integer.parseInt(nodeId));
-                                                    } catch (Exception ignored) {
-                                                    }
-                                                }
+                                                Node target = findNode(targetStr);
                                                 if (target != null) {
                                                     target.setDisplayName(display);
                                                     plugin.getGraphManager().save();
-                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("name-set").replace("<id>", String.valueOf(target.getId())).replace("<name>", display)));
+                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("name-set").replace("<id>", getFriendlyId(target)).replace("<name>", display)));
                                                 } else {
                                                     p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("node-not-found")));
                                                 }
@@ -99,31 +130,32 @@ public class GPSCommand {
                             .then(Commands.argument("target", StringArgumentType.greedyString())
                                     .suggests((ctx, builder) -> {
                                         for (Node n : plugin.getGraphManager().getNodes()) {
-                                            if (!n.getDisplayName().contains("node_"))
+                                            if (!n.getDisplayName().startsWith("node_") && !n.getDisplayName().startsWith("start_") && !n.getDisplayName().startsWith("stop_")) {
                                                 builder.suggest(ColorUtils.stripColor(n.getDisplayName()));
+                                            }
                                         }
                                         return builder.buildFuture();
                                     })
                                     .executes(ctx -> {
                                         if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
                                         String input = StringArgumentType.getString(ctx, "target");
-                                        Node target = plugin.getGraphManager().getNode(input);
+                                        Node target = findNode(input);
                                         if (target == null) target = plugin.getGraphManager().getNodeByDisplay(input);
-
                                         if (target == null) {
                                             String bestMatch = null;
                                             double bestScore = 0.0;
                                             for (Node n : plugin.getGraphManager().getNodes()) {
                                                 String plain = ColorUtils.stripColor(n.getDisplayName());
-                                                double score = StringUtils.getJaroWinklerDistance(input, plain);
+                                                double score = SimilarityUtils.getJaroWinklerDistance(input, plain);
                                                 if (score > bestScore) {
                                                     bestScore = score;
                                                     bestMatch = plain;
                                                 }
                                             }
-                                            if (bestScore > 0.6) {
-                                                String real = plugin.getGraphManager().getNodeByDisplay(bestMatch).getName();
-                                                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("correction").replace("<guess>", bestMatch).replace("<guess_raw>", real)));
+                                            if (bestScore > 0.6 && bestMatch != null) {
+                                                Node realNode = plugin.getGraphManager().getNodeByDisplay(bestMatch);
+                                                String suggestion = (realNode != null) ? String.valueOf(realNode.getId()) : bestMatch;
+                                                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("correction").replace("<guess>", bestMatch).replace("<guess_raw>", suggestion)));
                                                 plugin.getCfg().playSound(p, "sounds.popup");
                                             } else {
                                                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("node-not-found")));
@@ -142,5 +174,18 @@ public class GPSCommand {
                     .build(), "GPS System"
             );
         });
+    }
+
+    private Node findNode(String input) {
+        try {
+            return plugin.getGraphManager().getNode(Integer.parseInt(input));
+        } catch (NumberFormatException ignored) {
+        }
+        return plugin.getGraphManager().getNode(input);
+    }
+
+    private String getFriendlyId(Node n) {
+        if (n.getName().equals("node_" + n.getId())) return String.valueOf(n.getId());
+        return n.getName();
     }
 }

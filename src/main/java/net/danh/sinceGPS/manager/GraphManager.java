@@ -17,22 +17,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class GraphManager {
     private final SinceGPS plugin;
-
-    // Data Cache
     private final Map<Integer, Node> nodes = new ConcurrentHashMap<>();
     private final Map<String, Integer> nameIndex = new HashMap<>();
     private final Map<String, NodeGroup> groups = new HashMap<>();
-
-    // Recording Session: Player -> List<NodeID>
     private final Map<UUID, List<Integer>> recorders = new ConcurrentHashMap<>();
-
     private final SQLiteStorage database;
     private int nextId = 0;
     private BukkitTask visualizerTask;
 
-    // Cached Settings
     private Particle pNormal, pNew, pSnap, pEdge;
-    private double recMinDist, recAngle, recSnap;
+    private double recMinDist, recAngle, recSnap, optAngle, visRange, edgeDensity;
+    private long visUpdate;
 
     public GraphManager(SinceGPS plugin) {
         this.plugin = plugin;
@@ -41,7 +36,6 @@ public class GraphManager {
         startVisualizer();
     }
 
-    // --- NODE CORE ---
     public Node createNode(Location loc, String group) {
         Node n = new Node(nextId++, loc, group);
         nodes.put(n.getId(), n);
@@ -111,13 +105,9 @@ public class GraphManager {
         return g == null || g.canAccess(p);
     }
 
-    // --- SMART RECORDING ---
     public void toggleRecord(Player p) {
         if (recorders.containsKey(p.getUniqueId())) {
-            // STOP
             List<Integer> session = recorders.remove(p.getUniqueId());
-
-            // Xóa nếu quá ngắn (Lỡ tay)
             if (session.size() < 2) {
                 session.forEach(this::removeNode);
                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-too-short")));
@@ -126,46 +116,42 @@ public class GraphManager {
 
             int removed = optimizePath(session);
 
-            // Auto Rename Start/Stop
-            int startId = session.get(0);
-            int endId = session.get(session.size() - 1);
+            if (!session.isEmpty()) {
+                int startId = session.get(0);
+                Node startNode = getNode(startId);
+                if (startNode != null && startNode.getName().equals("node_" + startId)) {
+                    String newName = "start_" + startId;
+                    nameIndex.remove(startNode.getName());
+                    startNode.setName(newName);
+                    nameIndex.put(newName, startId);
+                }
 
-            Node startNode = getNode(startId);
-            if (startNode != null && startNode.getName().startsWith("node_")) {
-                String newName = "start_" + startId;
-                nameIndex.remove(startNode.getName());
-                startNode.setName(newName);
-                nameIndex.put(newName, startId);
-            }
+                int endId = session.get(session.size() - 1);
+                Node endNode = getNode(endId);
+                if (endNode != null && endNode.getName().equals("node_" + endId)) {
+                    String newName = "stop_" + endId;
+                    nameIndex.remove(endNode.getName());
+                    endNode.setName(newName);
+                    nameIndex.put(newName, endId);
+                }
 
-            Node endNode = getNode(endId);
-            if (endNode != null && endNode.getName().startsWith("node_")) {
-                String newName = "stop_" + endId;
-                nameIndex.remove(endNode.getName());
-                endNode.setName(newName);
-                nameIndex.put(newName, endId);
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-stopped").replace("<count>", String.valueOf(removed))));
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-start")
+                        .replace("<id>", getNode(startId).getName()).replace("<raw_id>", String.valueOf(startId))));
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-end")
+                        .replace("<id>", getNode(endId).getName()).replace("<raw_id>", String.valueOf(endId))));
             }
 
             saveAsync();
             plugin.getCfg().playSound(p, "sounds.stop");
-
-            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-stopped").replace("<count>", String.valueOf(removed))));
-            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-start")
-                    .replace("<id>", getNode(startId).getName()).replace("<raw_id>", String.valueOf(startId))));
-            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-end")
-                    .replace("<id>", getNode(endId).getName()).replace("<raw_id>", String.valueOf(endId))));
-
         } else {
-            // START
             List<Integer> session = new ArrayList<>();
             Node startNode = getNearestNode(p.getLocation(), recSnap);
-
             if (startNode == null) startNode = createNode(p.getLocation(), "default");
-            else p.sendMessage(ColorUtils.parseWithPrefix("&eĐã snap vào đường cũ (Node " + startNode.getId() + ")"));
-
+            else
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-snap").replace("<id>", String.valueOf(startNode.getId()))));
             session.add(startNode.getId());
             recorders.put(p.getUniqueId(), session);
-
             p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-started")));
             plugin.getCfg().playSound(p, "sounds.start");
         }
@@ -200,6 +186,7 @@ public class GraphManager {
                 connect(lastId, snap.getId(), false);
                 session.add(snap.getId());
                 p.spawnParticle(pSnap, snap.getLocation().add(0, 1, 0), 10);
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-snap").replace("<id>", String.valueOf(snap.getId()))));
                 plugin.getCfg().playSound(p, "sounds.snap");
             } else {
                 Node n = createNode(pLoc, "default");
@@ -222,7 +209,7 @@ public class GraphManager {
             Vector v1 = c.getLocation().toVector().subtract(p.getLocation().toVector()).normalize();
             Vector v2 = n.getLocation().toVector().subtract(c.getLocation().toVector()).normalize();
 
-            if (Math.toDegrees(v1.angle(v2)) < 5.0) {
+            if (Math.toDegrees(v1.angle(v2)) < optAngle) {
                 connect(p.getId(), n.getId(), false);
                 removeNode(c.getId());
                 ids.remove(i);
@@ -233,35 +220,38 @@ public class GraphManager {
         return removed;
     }
 
-    // --- VISUALIZER ---
     private void startVisualizer() {
+        if (visualizerTask != null) visualizerTask.cancel();
         visualizerTask = plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, () -> {
             for (UUID uid : recorders.keySet()) {
                 Player p = plugin.getServer().getPlayer(uid);
                 if (p == null || !p.isOnline()) continue;
-                for (Node n : nodes.values()) {
-                    if (n.getLocation().getWorld() != p.getWorld() || n.getLocation().distance(p.getLocation()) > 40)
-                        continue;
-                    p.spawnParticle(pNormal, n.getLocation().clone().add(0, 0.5, 0), 1, 0, 0, 0, 0);
-                    for (int tId : n.getEdges().keySet()) {
-                        Node t = nodes.get(tId);
-                        if (t != null) drawLine(p, n.getLocation(), t.getLocation());
+                try {
+                    Location pLoc = p.getLocation(); // ASYNC READ (Safe on Paper, mostly)
+                    for (Node n : nodes.values()) {
+                        if (n.getLocation().getWorld() != p.getWorld() || n.getLocation().distance(pLoc) > visRange)
+                            continue;
+                        p.spawnParticle(pNormal, n.getLocation().clone().add(0, 0.5, 0), 1, 0, 0, 0, 0);
+                        for (int tId : n.getEdges().keySet()) {
+                            Node t = nodes.get(tId);
+                            if (t != null) drawLine(p, n.getLocation(), t.getLocation());
+                        }
                     }
-                }
+                } catch (Exception ignored) {
+                } // Catch async errors
             }
-        }, 0L, 20L);
+        }, 0L, visUpdate);
     }
 
     private void drawLine(Player p, Location l1, Location l2) {
         Vector dir = l2.clone().subtract(l1).toVector();
         double len = dir.length();
-        dir.normalize().multiply(2.0);
-        for (double d = 0; d < len; d += 2.0) {
+        dir.normalize().multiply(edgeDensity);
+        for (double d = 0; d < len; d += edgeDensity) {
             p.spawnParticle(pEdge, l1.clone().add(dir.clone().multiply(d)).add(0, 0.5, 0), 1, 0, 0, 0, 0);
         }
     }
 
-    // --- IO ---
     public void saveAsync() {
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, this::save);
     }
@@ -271,10 +261,13 @@ public class GraphManager {
     }
 
     public void load() {
-        // Cache Configs
         recMinDist = plugin.getCfg().getDouble("settings.recorder.min-distance", 8.0);
         recAngle = plugin.getCfg().getDouble("settings.recorder.angle-threshold", 15.0);
         recSnap = plugin.getCfg().getDouble("settings.recorder.snap-distance", 3.0);
+        optAngle = plugin.getCfg().getDouble("settings.algorithm.optimization-angle", 5.0);
+        visRange = plugin.getCfg().getDouble("visuals.recorder.visualizer-range", 40.0);
+        edgeDensity = plugin.getCfg().getDouble("visuals.recorder.edge-density", 2.0);
+        visUpdate = plugin.getCfg().getInt("visuals.recorder.update-interval", 20);
 
         try {
             pNormal = Particle.valueOf(plugin.getCfg().getString("visuals.recorder.node-normal", "FLAME"));
@@ -317,7 +310,8 @@ public class GraphManager {
         nextId = nodes.keySet().stream().max(Integer::compare).orElse(0) + 1;
         for (Node n : nodes.values()) nameIndex.put(n.getName(), n.getId());
 
-        plugin.getLogger().info("Loaded " + nodes.size() + " nodes from SQLite.");
+        plugin.getLogger().info("Loaded " + nodes.size() + " nodes from Database.");
+        startVisualizer();
     }
 
     public void shutdown() {

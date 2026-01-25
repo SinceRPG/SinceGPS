@@ -23,7 +23,6 @@ public class SQLiteStorage {
     }
 
     private void initialize() {
-        // Load tên file và prefix từ config
         String fileName = plugin.getCfg().getString("database.file", "database.db");
         String prefix = plugin.getCfg().getString("database.table-prefix", "sincegps_");
 
@@ -155,7 +154,7 @@ public class SQLiteStorage {
     }
 
     public void deleteNode(int id) {
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+        Bukkit.getScheduler().runTaskAsynchronously(SinceGPS.inst(), () -> {
             try (Statement s = connection.createStatement()) {
                 s.execute("DELETE FROM " + tableNodes + " WHERE id=" + id);
                 s.execute("DELETE FROM " + tableEdges + " WHERE source_id=" + id + " OR target_id=" + id);

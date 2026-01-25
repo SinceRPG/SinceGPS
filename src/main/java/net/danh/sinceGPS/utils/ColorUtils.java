@@ -9,7 +9,6 @@ public class ColorUtils {
     private static final MiniMessage MINI = MiniMessage.miniMessage();
 
     public static Component parse(String input) {
-        // Hỗ trợ legacy &
         String converted = input.replace("&", "§")
                 .replace("§0", "<black>").replace("§1", "<dark_blue>").replace("§2", "<dark_green>")
                 .replace("§3", "<dark_aqua>").replace("§4", "<dark_red>").replace("§5", "<dark_purple>")

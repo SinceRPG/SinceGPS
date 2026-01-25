@@ -6,13 +6,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Node {
-    private final int id;
-    // Map<TargetID, Weight>
-    private final Map<Integer, Double> edges;
-    private String name;
-    private String displayName;
+    private int id;
+    private Map<Integer, Double> edges;
     private Location location;
     private String group;
+    private String name;
+    private String displayName;
 
     public Node(int id, Location location, String group) {
         this.id = id;
@@ -35,6 +34,10 @@ public class Node {
         return id;
     }
 
+    public void setId(int id) {
+        this.id = id;
+    }
+
     public String getName() {
         return name;
     }
@@ -55,11 +58,23 @@ public class Node {
         return location;
     }
 
+    public void setLocation(Location location) {
+        this.location = location;
+    }
+
     public String getGroup() {
         return group;
     }
 
+    public void setGroup(String group) {
+        this.group = group;
+    }
+
     public Map<Integer, Double> getEdges() {
         return edges;
+    }
+
+    public void setEdges(Map<Integer, Double> edges) {
+        this.edges = edges;
     }
 }

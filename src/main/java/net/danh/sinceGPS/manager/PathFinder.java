@@ -7,7 +7,6 @@ import org.bukkit.util.Vector;
 import java.util.*;
 
 public class PathFinder {
-    // A* Algorithm
     public static List<Location> findPath(Node start, Node end, GraphManager graph) {
         Map<Integer, Double> gScore = new HashMap<>();
         Map<Integer, Double> fScore = new HashMap<>();
@@ -47,12 +46,11 @@ public class PathFinder {
         int currId = current.getId();
         while (cameFrom.containsKey(currId)) {
             currId = cameFrom.get(currId);
-            path.addFirst(graph.getNode(currId).getLocation());
+            path.add(0, graph.getNode(currId).getLocation()); // Safe for Java 8+
         }
         return path;
     }
 
-    // Catmull-Rom Spline Smoothing
     public static List<Location> smoothPath(List<Location> points, int quality) {
         if (points.size() < 2) return points;
         List<Location> smooth = new ArrayList<>();
@@ -60,16 +58,16 @@ public class PathFinder {
 
         vectors.add(points.get(0).toVector().subtract(points.get(1).toVector().subtract(points.get(0).toVector())));
         for (Location l : points) vectors.add(l.toVector());
-        vectors.add(points.getLast().toVector().add(points.getLast().toVector().subtract(points.get(points.size() - 2).toVector())));
+        vectors.add(points.get(points.size() - 1).toVector().add(points.get(points.size() - 1).toVector().subtract(points.get(points.size() - 2).toVector())));
 
         for (int i = 0; i < vectors.size() - 3; i++) {
             for (int j = 0; j < quality; j++) {
                 double t = (double) j / quality;
                 Vector v = getCatmullRom(t, vectors.get(i), vectors.get(i + 1), vectors.get(i + 2), vectors.get(i + 3));
-                smooth.add(new Location(points.getFirst().getWorld(), v.getX(), v.getY(), v.getZ()));
+                smooth.add(new Location(points.get(0).getWorld(), v.getX(), v.getY(), v.getZ()));
             }
         }
-        smooth.add(points.getLast());
+        smooth.add(points.get(points.size() - 1));
         return smooth;
     }
 

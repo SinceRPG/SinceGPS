@@ -3,45 +3,44 @@ database:
   table-prefix: "sincegps_"
 
 settings:
-  # Khoảng cách tìm điểm bắt đầu (blocks)
   nearest-node-search-range: 100.0
-  # Khoảng cách tính là "đến nơi"
   reach-distance: 3.0
-  # Độ mượt đường cong (8-12)
-  curve-resolution: 8
-  # Tốc độ cập nhật (1 = mượt nhất)
   update-rate: 1
 
-  # Cấu hình Ghi hình (Admin)
+  algorithm:
+    curve-resolution: 8
+    optimization-angle: 5.0
+    smart-search-range: 100
+
   recorder:
-    min-distance: 8.0       # Đi xa X block mới tạo node
-    angle-threshold: 15.0   # Góc cua > X độ tạo node ngay
-    snap-distance: 3.0      # Khoảng cách tự bắt dính đường cũ
+    min-distance: 8.0
+    angle-threshold: 15.0
+    snap-distance: 3.0
 
-  # Cấu hình Dẫn đường (Player)
   navigation:
-    reroute-distance: 12.0  # Lệch X mét -> Tính lại đường
-    check-interval: 20      # Check mỗi 1 giây
+    reroute-distance: 12.0
+    check-interval: 20
 
-# Hiệu ứng hình ảnh
 visuals:
   view-distance: 60.0
 
-  # Hiệu ứng cho người chơi (Khi đi theo GPS)
   navigation:
-    path-type: REDSTONE
-    path-color: "0, 255, 255"  # Cyan
-    pulse-type: REDSTONE
-    pulse-color: "255, 165, 0" # Orange
+    path-type: DUST
+    path-color: "0, 255, 255"
+    pulse-type: DUST
+    pulse-color: "255, 165, 0"
     pulse-speed: 1.5
     arrow-enabled: true
+    arrow-lookahead: 8
 
-  # Hiệu ứng cho Admin (Khi đang Record)
   recorder:
-    node-normal: FLAME           # Các node cũ
-    node-new: HAPPY_VILLAGER     # Node vừa tạo
-    node-snap: SOUL_FIRE_FLAME   # Node bắt dính
-    edge-line: CRIT              # Dây nối
+    node-normal: FLAME
+    node-new: HAPPY_VILLAGER
+    node-snap: SOUL_FIRE_FLAME
+    edge-line: CRIT
+    edge-density: 2.0
+    visualizer-range: 40.0
+    update-interval: 20
 
 action-bar:
   enabled: true

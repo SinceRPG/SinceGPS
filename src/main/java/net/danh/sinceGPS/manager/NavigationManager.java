@@ -37,23 +37,27 @@ public class NavigationManager {
                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("path-not-found")));
                 return;
             }
-            int quality = plugin.getCfg().getInt("settings.curve-resolution", 8);
+            int quality = plugin.getCfg().getInt("settings.algorithm.curve-resolution", 8);
             List<Location> smoothPath = PathFinder.smoothPath(path, quality);
 
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 activeSessions.put(p.getUniqueId(), new Session(plugin, p, smoothPath, target));
                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("path-found")
                         .replace("<target>", target.getDisplayName())
-                        .replace("<distance>", String.format("%.1f", path.getFirst().distance(target.getLocation())))));
+                        .replace("<distance>", String.format("%.1f", path.get(0).distance(target.getLocation())))));
                 plugin.getCfg().playSound(p, "sounds.start");
             });
         });
     }
 
     public void stopNavigation(Player p, boolean msg) {
-        if (activeSessions.remove(p.getUniqueId()) != null && msg) {
-            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("stopped")));
-            plugin.getCfg().playSound(p, "sounds.stop");
+        Session session = activeSessions.remove(p.getUniqueId());
+        if (session != null) {
+            session.cleanup();
+            if (msg) {
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("stopped")));
+                plugin.getCfg().playSound(p, "sounds.stop");
+            }
         }
     }
 

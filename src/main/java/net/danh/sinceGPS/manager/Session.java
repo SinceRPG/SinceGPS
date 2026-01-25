@@ -19,12 +19,14 @@ public class Session {
     private final Node targetNode;
     private final BossBar bossBar;
 
-    // Cached Configs
     private final double reachDist;
     private final double rerouteDist;
-    private final Particle particleType;
+    private final int searchRange;
+    private final int arrowLookahead;
+
     private final Particle.DustOptions pathColor;
     private final Particle.DustOptions pulseColor;
+    private final Particle particleType;
     private final double pulseSpeed;
     private final boolean arrowEnabled;
     private final String arrowFwd, arrowLeft, arrowRight, arrowBack;
@@ -40,9 +42,11 @@ public class Session {
         this.path = path;
         this.targetNode = targetNode;
 
-        // Cache settings once
         this.reachDist = plugin.getCfg().getDouble("settings.reach-distance", 3.0);
         this.rerouteDist = plugin.getCfg().getDouble("settings.navigation.reroute-distance", 12.0);
+        this.searchRange = plugin.getCfg().getInt("settings.algorithm.smart-search-range", 100);
+        this.arrowLookahead = plugin.getCfg().getInt("visuals.navigation.arrow-lookahead", 8);
+
         this.pulseSpeed = plugin.getCfg().getDouble("visuals.navigation.pulse-speed", 1.5);
         this.arrowEnabled = plugin.getCfg().getBoolean("visuals.navigation.arrow-enabled", true);
 
@@ -72,7 +76,6 @@ public class Session {
         if (!player.isOnline()) return true;
         Location pLoc = player.getLocation();
 
-        int searchRange = 100;
         int max = Math.min(pathIndex + searchRange, path.size());
         double closestDistSq = Double.MAX_VALUE;
         int newIndex = pathIndex;
@@ -91,7 +94,7 @@ public class Session {
             lastRerouteCheck = System.currentTimeMillis();
         }
 
-        double distToEnd = pLoc.distance(path.getLast());
+        double distToEnd = pLoc.distance(path.get(path.size() - 1));
         if (distToEnd < reachDist) {
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("arrived")));
             plugin.getCfg().playSound(player, "sounds.arrive");
@@ -112,11 +115,11 @@ public class Session {
         Node startNode = plugin.getGraphManager().getNearestNode(pLoc);
         if (startNode != null) {
             player.sendActionBar(ColorUtils.parse(plugin.getMsg().getString("rerouting")));
-            plugin.getServer().getScheduler().runTaskAsynchronously(SinceGPS.inst(), () -> {
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin.inst(), () -> {
                 List<Location> newPath = PathFinder.findPath(startNode, targetNode, plugin.getGraphManager());
                 if (newPath != null && !newPath.isEmpty()) {
-                    List<Location> smooth = PathFinder.smoothPath(newPath, plugin.getCfg().getInt("settings.curve-resolution", 8));
-                    plugin.getServer().getScheduler().runTask(SinceGPS.inst(), () -> {
+                    List<Location> smooth = PathFinder.smoothPath(newPath, plugin.getCfg().getInt("settings.algorithm.curve-resolution", 8));
+                    plugin.getServer().getScheduler().runTask(plugin.inst(), () -> {
                         this.path = smooth;
                         this.pathIndex = 0;
                     });
@@ -141,7 +144,7 @@ public class Session {
         }
 
         if (arrowEnabled) {
-            int arrowIdx = Math.min(pathIndex + 8, path.size() - 1);
+            int arrowIdx = Math.min(pathIndex + arrowLookahead, path.size() - 1);
             Location target = path.get(arrowIdx);
             Vector dir = target.toVector().subtract(pLoc.toVector()).normalize();
             Location center = pLoc.clone().add(dir.clone().multiply(2)).add(0, 0.5, 0);
@@ -157,7 +160,7 @@ public class Session {
 
     private void renderActionBar(Location pLoc) {
         if (!plugin.getCfg().getBoolean("action-bar.enabled")) return;
-        Location next = path.get(Math.min(pathIndex + 8, path.size() - 1));
+        Location next = path.get(Math.min(pathIndex + arrowLookahead, path.size() - 1));
         Vector dir = next.toVector().subtract(pLoc.toVector()).normalize();
         Vector pDir = pLoc.getDirection().setY(0).normalize();
         double angle = Math.toDegrees(Math.atan2(dir.getZ(), dir.getX()) - Math.atan2(pDir.getZ(), pDir.getX()));
@@ -170,14 +173,13 @@ public class Session {
         else if (angle > -135 && angle <= -45) arrow = arrowLeft;
         else arrow = arrowBack;
 
-        double dist = pLoc.distance(path.getLast());
+        double dist = pLoc.distance(path.get(path.size() - 1));
         String msg = plugin.getCfg().getString("action-bar.format").replace("<arrow>", arrow).replace("<dist>", String.format("%.1f", dist));
         player.sendActionBar(ColorUtils.parse(msg));
     }
 
     private void spawnDust(Location loc, Particle.DustOptions dust) {
         try {
-            // Hỗ trợ cả particle thường và Dust
             if (particleType == Particle.DUST) {
                 player.spawnParticle(particleType, loc.clone().add(0, 0.5, 0), 1, 0, 0, 0, 0, dust);
             } else {

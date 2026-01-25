@@ -24,15 +24,13 @@ public final class SinceGPS extends JavaPlugin {
         this.settingsConfig = new ConfigUtils(this, "config.yml");
         this.messagesConfig = new ConfigUtils(this, "messages.yml");
 
-        // Init Managers
         this.graphManager = new GraphManager(this);
         this.navigationManager = new NavigationManager(this);
 
-        // Register
         new GPSCommand(this).register();
         getServer().getPluginManager().registerEvents(new RecordListener(this), this);
 
-        getLogger().info("SinceGPS v6.0 (Optimized) Enabled!");
+        getLogger().info("SinceGPS v6.0 (Enterprise) Enabled!");
     }
 
     @Override

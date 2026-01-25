@@ -29,8 +29,6 @@ public final class SinceGPS extends JavaPlugin {
 
         new GPSCommand(this).register();
         getServer().getPluginManager().registerEvents(new RecordListener(this), this);
-
-        getLogger().info("SinceGPS v6.0 (Enterprise) Enabled!");
     }
 
     @Override

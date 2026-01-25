@@ -11,6 +11,7 @@ import org.bukkit.Particle;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class Session {
@@ -19,6 +20,7 @@ public class Session {
     private final Node targetNode;
     private final BossBar bossBar;
 
+    // Configs
     private final double reachDist;
     private final double rerouteDist;
     private final int searchRange;
@@ -42,6 +44,7 @@ public class Session {
         this.path = path;
         this.targetNode = targetNode;
 
+        // Load Settings
         this.reachDist = plugin.getCfg().getDouble("settings.reach-distance", 3.0);
         this.rerouteDist = plugin.getCfg().getDouble("settings.navigation.reroute-distance", 12.0);
         this.searchRange = plugin.getCfg().getInt("settings.algorithm.smart-search-range", 100);
@@ -76,6 +79,7 @@ public class Session {
         if (!player.isOnline()) return true;
         Location pLoc = player.getLocation();
 
+        // Smart Indexing: Tìm điểm gần nhất trên đường đi để cập nhật tiến độ
         int max = Math.min(pathIndex + searchRange, path.size());
         double closestDistSq = Double.MAX_VALUE;
         int newIndex = pathIndex;
@@ -87,13 +91,20 @@ public class Session {
                 newIndex = i;
             }
         }
+
+        // Chỉ cập nhật index nếu tiến lên phía trước (tránh đi lùi làm nhảy index)
         if (newIndex > pathIndex) pathIndex = newIndex;
 
+        // Auto Reroute Check
         if (System.currentTimeMillis() - lastRerouteCheck > (plugin.getCfg().getInt("settings.navigation.check-interval") * 50L)) {
-            if (closestDistSq > (rerouteDist * rerouteDist)) triggerReroute(pLoc);
+            // Nếu khoảng cách từ người chơi đến điểm gần nhất > giới hạn cho phép -> LẠC ĐƯỜNG
+            if (closestDistSq > (rerouteDist * rerouteDist)) {
+                triggerReroute(pLoc);
+            }
             lastRerouteCheck = System.currentTimeMillis();
         }
 
+        // Check Arrive
         double distToEnd = pLoc.distance(path.get(path.size() - 1));
         if (distToEnd < reachDist) {
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("arrived")));
@@ -102,6 +113,7 @@ public class Session {
             return true;
         }
 
+        // Visuals
         String title = plugin.getMsg().getString("bossbar-title").replace("<dist>", String.format("%.1f", distToEnd));
         bossBar.name(ColorUtils.parse(title));
         bossBar.progress((float) Math.max(0, Math.min(1, 1 - (distToEnd / (distToEnd + 50)))));
@@ -111,17 +123,48 @@ public class Session {
         return false;
     }
 
+    // --- LOGIC TÍNH LẠI ĐƯỜNG (CÓ LEAD-IN TỪ CHÂN) ---
     private void triggerReroute(Location pLoc) {
         Node startNode = plugin.getGraphManager().getNearestNode(pLoc);
+
         if (startNode != null) {
             player.sendActionBar(ColorUtils.parse(plugin.getMsg().getString("rerouting")));
-            plugin.getServer().getScheduler().runTaskAsynchronously(plugin.inst(), () -> {
-                List<Location> newPath = PathFinder.findPath(startNode, targetNode, plugin.getGraphManager());
-                if (newPath != null && !newPath.isEmpty()) {
-                    List<Location> smooth = PathFinder.smoothPath(newPath, plugin.getCfg().getInt("settings.algorithm.curve-resolution", 8));
-                    plugin.getServer().getScheduler().runTask(plugin.inst(), () -> {
+
+            // Chạy async tìm đường
+            plugin.getServer().getScheduler().runTaskAsynchronously(SinceGPS.inst(), () -> {
+                List<Location> newRawPath = PathFinder.findPath(startNode, targetNode, plugin.getGraphManager());
+
+                if (newRawPath != null && !newRawPath.isEmpty()) {
+                    // Làm mượt đường đi
+                    List<Location> smooth = PathFinder.smoothPath(newRawPath, plugin.getCfg().getInt("settings.algorithm.curve-resolution", 8));
+
+                    // Quay lại Main Thread để cập nhật
+                    plugin.getServer().getScheduler().runTask(SinceGPS.inst(), () -> {
+                        if (!player.isOnline()) return;
+
+                        // [NEW] Logic Nối dây từ chân người chơi vào đường mới
+                        Location currentPos = player.getLocation();
+                        Location pathStart = smooth.get(0);
+
+                        // Nếu khoảng cách > 2 block, tạo các điểm trung gian
+                        if (currentPos.distance(pathStart) > 2.0) {
+                            List<Location> leadIn = new ArrayList<>();
+                            Vector dir = pathStart.toVector().subtract(currentPos.toVector());
+                            double dist = dir.length();
+                            dir.normalize().multiply(0.5); // Mật độ 0.5 block/điểm
+
+                            Location walker = currentPos.clone();
+                            for (double d = 0; d < dist; d += 0.5) {
+                                leadIn.add(walker.clone());
+                                walker.add(dir);
+                            }
+                            // Thêm vào đầu danh sách
+                            smooth.addAll(0, leadIn);
+                        }
+
+                        // Cập nhật đường đi mới cho session
                         this.path = smooth;
-                        this.pathIndex = 0;
+                        this.pathIndex = 0; // Reset index về 0 để bắt đầu từ chân người chơi
                     });
                 }
             });
@@ -132,8 +175,10 @@ public class Session {
         int view = (int) plugin.getCfg().getDouble("visuals.view-distance", 60.0);
         int end = Math.min(pathIndex + view * 2, path.size());
 
+        // Vẽ đường tĩnh
         for (int i = pathIndex; i < end; i += 2) spawnDust(path.get(i), pathColor);
 
+        // Vẽ xung nhịp (Pulse)
         pulseOffset += pulseSpeed;
         if (pulseOffset > view * 2) pulseOffset = 0;
 
@@ -143,6 +188,7 @@ public class Session {
             if (pIdx > 0) spawnDust(path.get(pIdx - 1), pulseColor);
         }
 
+        // Vẽ mũi tên 3D
         if (arrowEnabled) {
             int arrowIdx = Math.min(pathIndex + arrowLookahead, path.size() - 1);
             Location target = path.get(arrowIdx);

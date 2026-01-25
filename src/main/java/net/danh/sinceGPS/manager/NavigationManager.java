@@ -44,7 +44,7 @@ public class NavigationManager {
                 activeSessions.put(p.getUniqueId(), new Session(plugin, p, smoothPath, target));
                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("path-found")
                         .replace("<target>", target.getDisplayName())
-                        .replace("<distance>", String.format("%.1f", path.get(0).distance(target.getLocation())))));
+                        .replace("<distance>", String.format("%.1f", path.getFirst().distance(target.getLocation())))));
                 plugin.getCfg().playSound(p, "sounds.start");
             });
         });

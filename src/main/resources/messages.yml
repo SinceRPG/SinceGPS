@@ -29,8 +29,9 @@ record-started: "<green><bold>REC:</bold> <gray>Bắt đầu ghi hình thông mi
 
 # Tin nhắn tổng kết sau khi tắt Record (Quan trọng: Nút đặt tên nhanh)
 record-stopped: "<red><bold>REC:</bold> <gray>Đã dừng. <yellow>Hệ thống đã tối ưu và xóa <count> node thừa."
-record-summary-start: "<gray>├ Điểm đầu (ID: <id>): <gold><click:suggest_command:'/gps setname <id> '><hover:show_text:'&eBấm để đặt tên cho điểm xuất phát'>[ĐẶT TÊN]</hover></click>"
-record-summary-end: "<gray>└ Điểm cuối (ID: <id>): <gold><click:suggest_command:'/gps setname <id> '><hover:show_text:'&eBấm để đặt tên cho điểm đích'>[ĐẶT TÊN]</hover></click>"
+
+record-summary-start: "<gray>├ Điểm đầu (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên cho điểm xuất phát'>[ĐẶT TÊN]</hover></click>"
+record-summary-end: "<gray>└ Điểm cuối (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên cho điểm đích'>[ĐẶT TÊN]</hover></click>"
 
 # Tin nhắn Editor thủ công (nếu dùng)
 editor-disabled: "<red>Đã tắt Edit Mode."

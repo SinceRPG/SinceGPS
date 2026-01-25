@@ -18,26 +18,31 @@ import java.util.concurrent.ConcurrentHashMap;
 public class GraphManager {
     private final SinceGPS plugin;
 
+    // Dữ liệu bộ nhớ (Cache)
     private final Map<Integer, Node> nodes = new ConcurrentHashMap<>();
     private final Map<String, Integer> nameIndex = new HashMap<>();
     private final Map<String, NodeGroup> groups = new HashMap<>();
 
+    // Map lưu session ghi hình: PlayerUUID -> List<NodeID>
     private final Map<UUID, List<Integer>> recorders = new ConcurrentHashMap<>();
 
+    // Hệ thống lưu trữ SQLite
     private final SQLiteStorage database;
 
     private int nextId = 0;
     private BukkitTask visualizerTask;
 
     // Cached Settings
-    private Particle pNodeNormal, pNodeSelected, pNodeAuto, pEdge;
+    private Particle pNodeNormal;
+    private Particle pNodeAuto;
+    private Particle pEdge;
     private double recordMinDist, recordAngleThreshold, recordSnapDist;
 
     public GraphManager(SinceGPS plugin) {
         this.plugin = plugin;
-        this.database = new SQLiteStorage(plugin);
-        load();
-        startVisualizer();
+        this.database = new SQLiteStorage(plugin); // Khởi tạo kết nối DB
+        load(); // Tải dữ liệu
+        startVisualizer(); // Bắt đầu task hiển thị hạt
     }
 
     // --- NODE OPERATIONS ---
@@ -121,13 +126,58 @@ public class GraphManager {
         if (recorders.containsKey(p.getUniqueId())) {
             List<Integer> session = recorders.remove(p.getUniqueId());
             int removed = optimizePath(session);
+
+            // --- AUTO RENAME START/STOP NODES ---
+            if (!session.isEmpty()) {
+                // Rename Start Node
+                int startId = session.getFirst();
+                Node startNode = getNode(startId);
+                if (startNode != null) {
+                    // Only rename if it still has the default name (to avoid overwriting custom names)
+                    if (startNode.getName().equals("node_" + startId)) {
+                        String newName = "start_node_" + startId;
+                        // Update name index
+                        nameIndex.remove(startNode.getName());
+                        startNode.setName(newName);
+                        nameIndex.put(newName, startId);
+                    }
+                }
+
+                // Rename End Node (only if distinct from start)
+                if (session.size() > 1) {
+                    int endId = session.getLast();
+                    Node endNode = getNode(endId);
+                    if (endNode != null) {
+                        if (endNode.getName().equals("node_" + endId)) {
+                            String newName = "stop_node_" + endId;
+                            nameIndex.remove(endNode.getName());
+                            endNode.setName(newName);
+                            nameIndex.put(newName, endId);
+                        }
+                    }
+                }
+            }
+            // -------------------------------------
+
             saveAsync();
 
             p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-stopped").replace("<count>", String.valueOf(removed))));
 
             if (!session.isEmpty()) {
-                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-start").replace("<id>", String.valueOf(session.get(0)))));
-                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-end").replace("<id>", String.valueOf(session.get(session.size() - 1)))));
+                int startId = session.getFirst();
+                int endId = session.getLast();
+
+                // Fetch the updated names for the message
+                String startName = getNode(startId).getName();
+                String endName = getNode(endId).getName();
+
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-start")
+                        .replace("<id>", startName) // Show the new name (start_node_ID)
+                        .replace("<raw_id>", String.valueOf(startId)))); // Keep raw ID for command suggestion if needed
+
+                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-summary-end")
+                        .replace("<id>", endName) // Show the new name (stop_node_ID)
+                        .replace("<raw_id>", String.valueOf(endId))));
             }
 
             plugin.getCfg().playSound(p, "sounds.stop");
@@ -263,6 +313,7 @@ public class GraphManager {
         } catch (Exception e) {
             pNodeNormal = Particle.FLAME;
         }
+        Particle pNodeSelected;
         try {
             pNodeSelected = Particle.valueOf(plugin.getCfg().getString("visuals.editor.node-selected", "HAPPY_VILLAGER"));
         } catch (Exception e) {

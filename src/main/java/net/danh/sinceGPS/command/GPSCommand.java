@@ -66,6 +66,7 @@ public class GPSCommand {
                             .then(Commands.argument("node_id", StringArgumentType.word())
                                     .suggests((ctx, builder) -> {
                                         for (Node n : plugin.getGraphManager().getNodes()) {
+                                            if (n.getDisplayName().startsWith("node_")) continue;
                                             builder.suggest(n.getId());
                                         }
                                         return builder.buildFuture();

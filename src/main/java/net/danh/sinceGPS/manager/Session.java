@@ -91,7 +91,7 @@ public class Session {
             lastRerouteCheck = System.currentTimeMillis();
         }
 
-        double distToEnd = pLoc.distance(path.get(path.size() - 1));
+        double distToEnd = pLoc.distance(path.getLast());
         if (distToEnd < reachDist) {
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("arrived")));
             plugin.getCfg().playSound(player, "sounds.arrive");
@@ -112,11 +112,11 @@ public class Session {
         Node startNode = plugin.getGraphManager().getNearestNode(pLoc);
         if (startNode != null) {
             player.sendActionBar(ColorUtils.parse(plugin.getMsg().getString("rerouting")));
-            plugin.getServer().getScheduler().runTaskAsynchronously(plugin.inst(), () -> {
+            plugin.getServer().getScheduler().runTaskAsynchronously(SinceGPS.inst(), () -> {
                 List<Location> newPath = PathFinder.findPath(startNode, targetNode, plugin.getGraphManager());
                 if (newPath != null && !newPath.isEmpty()) {
                     List<Location> smooth = PathFinder.smoothPath(newPath, plugin.getCfg().getInt("settings.curve-resolution", 8));
-                    plugin.getServer().getScheduler().runTask(plugin.inst(), () -> {
+                    plugin.getServer().getScheduler().runTask(SinceGPS.inst(), () -> {
                         this.path = smooth;
                         this.pathIndex = 0;
                     });
@@ -170,7 +170,7 @@ public class Session {
         else if (angle > -135 && angle <= -45) arrow = arrowLeft;
         else arrow = arrowBack;
 
-        double dist = pLoc.distance(path.get(path.size() - 1));
+        double dist = pLoc.distance(path.getLast());
         String msg = plugin.getCfg().getString("action-bar.format").replace("<arrow>", arrow).replace("<dist>", String.format("%.1f", dist));
         player.sendActionBar(ColorUtils.parse(msg));
     }

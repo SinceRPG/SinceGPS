@@ -122,8 +122,8 @@ public class GPSCommand {
                                                 }
                                             }
                                             if (bestScore > 0.6) {
-                                                String realName = plugin.getGraphManager().getNodeByDisplay(bestMatch).getName();
-                                                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("correction").replace("<guess>", bestMatch).replace("<guess_raw>", realName)));
+                                                String real = plugin.getGraphManager().getNodeByDisplay(bestMatch).getName();
+                                                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("correction").replace("<guess>", bestMatch).replace("<guess_raw>", real)));
                                                 plugin.getCfg().playSound(p, "sounds.popup");
                                             } else {
                                                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("node-not-found")));

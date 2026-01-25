@@ -1,50 +1,30 @@
-# Tiền tố chung cho mọi tin nhắn
 prefix: "<gradient:#00FFAA:#00AAFF><bold>SinceGPS</bold></gradient> <gray>» "
 
-# --- TIN NHẮN HỆ THỐNG ---
-reload-success: "<green>Đã tải lại cấu hình và cơ sở dữ liệu."
+# SYSTEM
+reload-success: "<green>Đã tải lại cấu hình và database."
+no-permission: "<red>Bạn không có quyền thực hiện lệnh này."
+
+# USER NAVIGATION
+path-found: "<green>Đã tìm thấy đường đến <target>! <gray>(<distance>m)"
+path-not-found: "<red>Không tìm thấy đường đi khả thi."
+node-not-found: "<red>Không tìm thấy địa điểm này."
 stopped: "<red>Đã tắt GPS."
 arrived: "<yellow><bold>BẠN ĐÃ ĐẾN NƠI!"
-no-permission: "<red>Bạn không có quyền đi đến khu vực này."
-
-# --- TÌM ĐƯỜNG ---
-path-found: "<green>Đã tìm thấy đường đến <target>! <gray>(<distance>m)"
-path-not-found: "<red>Không tìm thấy đường đi khả thi. <gray>(Có thể do chưa kết nối hoặc quá xa)"
-node-not-found: "<red>Không tìm thấy địa điểm này."
 rerouting: "<gray><i>Đang tính lại đường..."
-
-# Gợi ý khi gõ sai tên (Có thể click vào để chọn)
 correction: "<yellow>Ý bạn là <gold><guess><yellow>? <click:run_command:'/gps to <guess_raw>'><hover:show_text:'&eBấm để đi đến &f<guess_raw>'><aqua>[CLICK ĐỂ ĐI]</hover></click>"
 
-# --- DANH SÁCH (/gps list) ---
+# LIST
 list-header: "<gradient:#FFD700:#FFA500><bold> DANH SÁCH ĐỊA ĐIỂM </bold></gradient>"
-# <id> là tên kỹ thuật, <name> là tên hiển thị đẹp
 list-item: " <gray>- <white><name> <dark_gray>[<group>] <green><click:run_command:'/gps to <id>'><hover:show_text:'&7Click để đi đến &f<name>'>[ĐI NGAY]</hover></click>"
 
-# --- CÔNG CỤ QUẢN TRỊ (RECORD & EDIT) ---
+# ADMIN TOOLS
 name-set: "<green>Đã đổi tên hiển thị của Node <id> thành: <name>"
+record-started: "<green><bold>REC:</bold> <gray>Bắt đầu ghi hình... <yellow>(Hãy chạy bộ đến đích)"
+record-stopped: "<red><bold>REC:</bold> <gray>Đã dừng. <yellow>Đã tối ưu và xóa <count> node thừa."
+record-too-short: "<red><bold>REC:</bold> <gray>Quãng đường quá ngắn, đã hủy lưu."
 
-# Tin nhắn khi bật chế độ Record
-record-started: "<green><bold>REC:</bold> <gray>Bắt đầu ghi hình thông minh... <yellow>(Hãy chạy bộ đến đích)"
+# SUMMARY BUTTONS
+record-summary-start: "<gray>├ Điểm đầu (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên điểm xuất phát'>[ĐẶT TÊN]</hover></click>"
+record-summary-end: "<gray>└ Điểm cuối (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên điểm đích'>[ĐẶT TÊN]</hover></click>"
 
-# Tin nhắn tổng kết sau khi tắt Record (Quan trọng: Nút đặt tên nhanh)
-record-stopped: "<red><bold>REC:</bold> <gray>Đã dừng. <yellow>Hệ thống đã tối ưu và xóa <count> node thừa."
-
-record-summary-start: "<gray>├ Điểm đầu (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên cho điểm xuất phát'>[ĐẶT TÊN]</hover></click>"
-record-summary-end: "<gray>└ Điểm cuối (<id>): <gold><click:suggest_command:'/gps setname <raw_id> '><hover:show_text:'&eBấm để đặt tên cho điểm đích'>[ĐẶT TÊN]</hover></click>"
-
-# Tin nhắn Editor thủ công (nếu dùng)
-editor-disabled: "<red>Đã tắt Edit Mode."
-editor-enabled: "<green>Đã bật Edit Mode! <gray>Cầm Gậy (Stick) để thao tác."
-editor-guide-1: "<gray>- Chuột Trái: <white>Tạo/Chọn Node"
-editor-guide-2: "<gray>- Chuột Phải: <white>Nối dây (Shift = 1 chiều)"
-editor-guide-3: "<gray>- Shift + Trái: <white>Xóa Node"
-
-node-created: "<green>Đã tạo Node ID: <id>"
-node-deleted: "<red>Đã xóa Node ID: <id>"
-node-selected: "<yellow>Đã chọn Node ID: <id>"
-node-connected: "<green>Đã kết nối Node <id1> <-> Node <id2>"
-node-connected-one-way: "<green>Đã kết nối 1 chiều Node <id1> -> Node <id2>"
-
-# --- VISUALS ---
 bossbar-title: "<bold>Mục tiêu:</bold> <yellow><dist>m"

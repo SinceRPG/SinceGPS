@@ -1,7 +1,7 @@
 package net.danh.sinceGPS;
 
 import net.danh.sinceGPS.command.GPSCommand;
-import net.danh.sinceGPS.listeners.EditorListener;
+import net.danh.sinceGPS.listeners.RecordListener;
 import net.danh.sinceGPS.manager.GraphManager;
 import net.danh.sinceGPS.manager.NavigationManager;
 import net.danh.sinceGPS.utils.ConfigUtils;
@@ -24,14 +24,15 @@ public final class SinceGPS extends JavaPlugin {
         this.settingsConfig = new ConfigUtils(this, "config.yml");
         this.messagesConfig = new ConfigUtils(this, "messages.yml");
 
-        // Khởi tạo theo thứ tự
+        // Init Managers
         this.graphManager = new GraphManager(this);
         this.navigationManager = new NavigationManager(this);
 
+        // Register
         new GPSCommand(this).register();
-        getServer().getPluginManager().registerEvents(new EditorListener(this), this);
+        getServer().getPluginManager().registerEvents(new RecordListener(this), this);
 
-        getLogger().info("SinceGPS v5.0 (Enterprise) Enabled!");
+        getLogger().info("SinceGPS v6.0 (Optimized) Enabled!");
     }
 
     @Override

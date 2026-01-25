@@ -5,10 +5,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 
-public class EditorListener implements Listener {
+public class RecordListener implements Listener {
     private final SinceGPS plugin;
 
-    public EditorListener(SinceGPS plugin) {
+    public RecordListener(SinceGPS plugin) {
         this.plugin = plugin;
     }
 

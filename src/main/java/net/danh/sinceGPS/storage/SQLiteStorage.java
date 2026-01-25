@@ -13,8 +13,9 @@ import java.util.logging.Level;
 
 public class SQLiteStorage {
     private final SinceGPS plugin;
-    private final String dbName = "database.db";
     private Connection connection;
+    private String tableNodes;
+    private String tableEdges;
 
     public SQLiteStorage(SinceGPS plugin) {
         this.plugin = plugin;
@@ -22,9 +23,17 @@ public class SQLiteStorage {
     }
 
     private void initialize() {
-        File dataFolder = new File(plugin.getDataFolder(), dbName);
+        // Load tên file và prefix từ config
+        String fileName = plugin.getCfg().getString("database.file", "database.db");
+        String prefix = plugin.getCfg().getString("database.table-prefix", "sincegps_");
+
+        this.tableNodes = prefix + "nodes";
+        this.tableEdges = prefix + "edges";
+
+        File dataFolder = new File(plugin.getDataFolder(), fileName);
         if (!dataFolder.exists()) {
             try {
+                dataFolder.getParentFile().mkdirs();
                 dataFolder.createNewFile();
             } catch (Exception e) {
                 plugin.getLogger().severe("Không thể tạo file database!");
@@ -33,7 +42,7 @@ public class SQLiteStorage {
 
         try {
             Class.forName("org.sqlite.JDBC");
-            connection = DriverManager.getConnection("jdbc:sqlite:" + dataFolder);
+            connection = DriverManager.getConnection("jdbc:sqlite:" + dataFolder.getAbsolutePath());
             createTables();
         } catch (Exception e) {
             plugin.getLogger().severe("Lỗi kết nối SQLite: " + e.getMessage());
@@ -41,8 +50,7 @@ public class SQLiteStorage {
     }
 
     private void createTables() {
-        // Bảng lưu Node
-        String nodeTable = "CREATE TABLE IF NOT EXISTS gps_nodes (" +
+        String nodeTable = "CREATE TABLE IF NOT EXISTS " + tableNodes + " (" +
                 "id INTEGER PRIMARY KEY," +
                 "name TEXT," +
                 "display_name TEXT," +
@@ -53,8 +61,7 @@ public class SQLiteStorage {
                 "group_name TEXT" +
                 ");";
 
-        // Bảng lưu kết nối (Edge)
-        String edgeTable = "CREATE TABLE IF NOT EXISTS gps_edges (" +
+        String edgeTable = "CREATE TABLE IF NOT EXISTS " + tableEdges + " (" +
                 "source_id INTEGER," +
                 "target_id INTEGER," +
                 "weight DOUBLE," +
@@ -69,37 +76,31 @@ public class SQLiteStorage {
         }
     }
 
-    // --- LOAD DATA ---
     public Map<Integer, Node> loadNodes() {
         Map<Integer, Node> nodes = new HashMap<>();
-
-        // 1. Load Nodes
-        try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM gps_nodes")) {
+        try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM " + tableNodes)) {
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
                 int id = rs.getInt("id");
                 String worldName = rs.getString("world");
-                if (Bukkit.getWorld(worldName) == null) continue; // Skip nếu world null
+                if (Bukkit.getWorld(worldName) == null) continue;
 
                 Location loc = new Location(Bukkit.getWorld(worldName), rs.getDouble("x"), rs.getDouble("y"), rs.getDouble("z"));
                 Node node = new Node(id, loc, rs.getString("group_name"));
                 node.setName(rs.getString("name"));
                 node.setDisplayName(rs.getString("display_name"));
-
                 nodes.put(id, node);
             }
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Lỗi load nodes", e);
         }
 
-        // 2. Load Edges
-        try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM gps_edges")) {
+        try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM " + tableEdges)) {
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
                 int sourceId = rs.getInt("source_id");
                 int targetId = rs.getInt("target_id");
                 double weight = rs.getDouble("weight");
-
                 Node source = nodes.get(sourceId);
                 if (source != null && nodes.containsKey(targetId)) {
                     source.connect(targetId, weight);
@@ -108,25 +109,17 @@ public class SQLiteStorage {
         } catch (SQLException e) {
             plugin.getLogger().log(Level.SEVERE, "Lỗi load edges", e);
         }
-
         return nodes;
     }
 
-    // --- SAVE DATA (Async Bulk Update) ---
     public void saveAll(Map<Integer, Node> nodes) {
-        // Dùng Transaction để save cực nhanh (nguyên tắc ACID)
-        String insertNode = "REPLACE INTO gps_nodes (id, name, display_name, world, x, y, z, group_name) VALUES(?,?,?,?,?,?,?,?)";
-        String insertEdge = "REPLACE INTO gps_edges (source_id, target_id, weight) VALUES(?,?,?)";
+        String insertNode = "REPLACE INTO " + tableNodes + " (id, name, display_name, world, x, y, z, group_name) VALUES(?,?,?,?,?,?,?,?)";
+        String insertEdge = "REPLACE INTO " + tableEdges + " (source_id, target_id, weight) VALUES(?,?,?)";
 
         try {
-            connection.setAutoCommit(false); // Bắt đầu transaction
-
+            connection.setAutoCommit(false);
             try (PreparedStatement psNode = connection.prepareStatement(insertNode);
                  PreparedStatement psEdge = connection.prepareStatement(insertEdge)) {
-
-                // Xóa dữ liệu cũ (hoặc dùng REPLACE INTO như trên)
-                // Ở đây mình dùng REPLACE INTO để update, nhưng để sạch sẽ ta nên truncate trước nếu muốn đồng bộ hoàn toàn
-                // Tuy nhiên để an toàn, ta cứ update đè.
 
                 for (Node n : nodes.values()) {
                     psNode.setInt(1, n.getId());
@@ -146,12 +139,10 @@ public class SQLiteStorage {
                         psEdge.addBatch();
                     }
                 }
-
                 psNode.executeBatch();
                 psEdge.executeBatch();
             }
-
-            connection.commit(); // Chốt đơn
+            connection.commit();
             connection.setAutoCommit(true);
         } catch (SQLException e) {
             e.printStackTrace();
@@ -163,12 +154,11 @@ public class SQLiteStorage {
         }
     }
 
-    // Xóa node khỏi DB khi người chơi xóa ingame
     public void deleteNode(int id) {
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try (Statement s = connection.createStatement()) {
-                s.execute("DELETE FROM gps_nodes WHERE id=" + id);
-                s.execute("DELETE FROM gps_edges WHERE source_id=" + id + " OR target_id=" + id);
+                s.execute("DELETE FROM " + tableNodes + " WHERE id=" + id);
+                s.execute("DELETE FROM " + tableEdges + " WHERE source_id=" + id + " OR target_id=" + id);
             } catch (SQLException e) {
                 e.printStackTrace();
             }

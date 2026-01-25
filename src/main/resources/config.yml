@@ -1,34 +1,78 @@
+# ------------------------------------------------------------------------
+#               SinceGPS v5.5 - Cấu hình hệ thống (Enterprise)
+# ------------------------------------------------------------------------
+
+# Cấu hình Cơ sở dữ liệu (SQLite)
+# Dữ liệu sẽ được lưu trong file .db thay vì file text để tối ưu hiệu năng.
+database:
+  file: "database.db"
+  table-prefix: "sincegps_"
+
 settings:
-  # Khoảng cách tối đa tìm node để bắt đầu dẫn đường
+  # Khoảng cách tối đa (blocks) để tìm một điểm mốc gần nhất khi bắt đầu dẫn đường.
+  # Nếu đứng quá xa đường đi, plugin sẽ báo không tìm thấy.
   nearest-node-search-range: 100.0
-  # Khoảng cách để tính là "đến nơi"
+
+  # Khoảng cách (blocks) để tính là người chơi đã "đến nơi".
   reach-distance: 3.0
-  # Độ mượt đường cong (Spline). 8 là đẹp và nhẹ.
+
+  # Độ mượt của đường cong (Spline).
+  # - Thấp (4-6): Đường hơi gãy khúc, tiết kiệm RAM.
+  # - Cao (8-12): Đường rất mượt, tốn tài nguyên hơn chút.
   curve-resolution: 8
 
-  # [QUAN TRỌNG] Cấu hình Smart Recorder (Ghi hình thông minh)
+  # Tốc độ cập nhật đường đi (ticks). 1 tick = 0.05 giây.
+  # Để 1 là mượt nhất. Nếu server quá lag có thể tăng lên 2 hoặc 5.
+  update-rate: 1
+
+  # --- CẤU HÌNH GHI HÌNH THÔNG MINH (SMART RECORDER) ---
   recorder:
-    # Chỉ tạo node mới nếu khoảng cách > X block (Trừ khi đang cua)
+    # Chỉ tạo Node mới nếu khoảng cách với Node cũ lớn hơn X blocks.
+    # Giúp giảm số lượng Node thừa trên đoạn đường thẳng.
     min-distance: 8.0
-    # Nếu góc quay > X độ -> Tạo node ngay lập tức (Để ôm cua mượt)
+
+    # Nếu góc quay của bạn lớn hơn X độ (đang cua), plugin sẽ tạo Node ngay lập tức.
+    # Giúp đường đi ôm sát góc cua.
     angle-threshold: 15.0
-    # Khoảng cách để tự động bắt dính (snap) vào các con đường cũ (Tạo ngã tư)
+
+    # Khoảng cách để tự động bắt dính (Snap) vào đường cũ tạo ngã ba/ngã tư.
     snap-distance: 3.0
 
-  # [QUAN TRỌNG] Cấu hình Tự động tìm lại đường (Reroute)
+  # --- CẤU HÌNH TỰ ĐỘNG TÍNH LẠI ĐƯỜNG (AUTO REROUTE) ---
   navigation:
-    # Nếu đi lệch khỏi đường X mét -> Tính lại đường
+    # Nếu người chơi đi lệch khỏi đường dẫn quá X mét, hệ thống sẽ tự tìm đường mới.
     reroute-distance: 12.0
-    # Thời gian check lại đường (ticks). 5 = 0.25s/lần
-    check-interval: 5
 
+    # Thời gian kiểm tra lệch đường (ticks). 20 ticks = 1 giây.
+    check-interval: 20
+
+# Cấu hình Hiệu ứng hình ảnh (Visuals)
 visuals:
+  # Khoảng cách hiển thị hạt (Particle) tính từ người chơi.
   view-distance: 60.0
-  particle-type: REDSTONE
-  path-color: "0, 255, 255"
-  pulse-color: "255, 165, 0"
-  pulse-speed: 1.5
 
+  # --- KHI ĐANG DẪN ĐƯỜNG ---
+  navigation:
+    # Loại hạt đường dẫn (Khuyên dùng REDSTONE hoặc DUST để chỉnh màu được)
+    path-type: REDSTONE
+    path-color: "0, 255, 255"  # Màu Cyan (R, G, B)
+
+    # Hạt xung nhịp (Pulse) chạy dọc đường đi
+    pulse-type: REDSTONE
+    pulse-color: "255, 165, 0" # Màu Cam
+    pulse-speed: 1.5           # Tốc độ chạy
+
+    # Bật/Tắt mũi tên 3D dưới chân
+    arrow-enabled: true
+
+  # --- KHI ĐANG RECORD HOẶC EDIT ---
+  editor:
+    node-normal: FLAME           # Node bình thường
+    node-selected: HAPPY_VILLAGER # Node vừa tạo / đang chọn
+    node-auto-create: SOUL_FIRE_FLAME # Node được tạo tự động khi Record
+    edge-line: CRIT              # Dây nối giữa các Node
+
+# Cấu hình Action Bar (Thanh hiển thị phía trên Hotbar)
 action-bar:
   enabled: true
   arrows:
@@ -36,16 +80,23 @@ action-bar:
     left: "⬅"
     right: "➡"
     backward: "⬇"
+  # Hỗ trợ MiniMessage (<color>, <bold>, etc.)
   format: "<yellow><bold><arrow> <white>Đi về phía trước <gold><dist>m"
 
+# Cấu hình Nhóm địa điểm (Dùng để phân quyền)
+# Bạn có thể gán nhóm cho Node trong lúc tạo (mặc định là 'default')
 groups:
   default:
-    permission: ""
-    navigable: true
+    permission: ""                 # Không cần quyền
+    navigable: true                # Cho phép tìm đường
   admin:
-    permission: "gps.group.admin"
+    permission: "gps.group.admin"  # Cần quyền này mới đi được
+    navigable: true
+  vip:
+    permission: "gps.group.vip"
     navigable: true
 
+# Cấu hình Âm thanh (Sound)
 sounds:
   start:
     enabled: true
@@ -62,8 +113,18 @@ sounds:
     type: UI_TOAST_CHALLENGE_COMPLETE
     volume: 1.0
     pitch: 1.0
-  popup:
+  popup: # Âm thanh khi gợi ý từ sai chính tả
     enabled: true
     type: ENTITY_VILLAGER_NO
     volume: 1.0
     pitch: 1.0
+  click-node: # Âm thanh khi thao tác Edit
+    enabled: true
+    type: UI_BUTTON_CLICK
+    volume: 0.5
+    pitch: 2.0
+  snap: # Âm thanh khi tự động bắt dính đường cũ
+    enabled: true
+    type: BLOCK_NOTE_BLOCK_PLING
+    volume: 1.0
+    pitch: 2.0

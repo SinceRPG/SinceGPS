@@ -67,6 +67,10 @@ public class ConfigUtils {
         return config.getInt(path, def);
     }
 
+    public int getInt(String path) {
+        return config.getInt(path);
+    }
+
     public double getDouble(String path, double def) {
         return config.getDouble(path, def);
     }

@@ -46,16 +46,17 @@ public class GPSCommand {
                     )
                     .then(Commands.literal("list")
                             .executes(ctx -> {
-                                Player p = (Player) ctx.getSource().getExecutor();
-                                p.sendMessage(ColorUtils.parse(plugin.getMsg().getString("list-header")));
-                                for (Node n : plugin.getGraphManager().getNodes()) {
-                                    if (!plugin.getGraphManager().canAccess(p, n)) continue;
-                                    if (n.getName().startsWith("node_") && !p.hasPermission("gps.admin")) continue;
-                                    String msg = plugin.getMsg().getString("list-item")
-                                            .replace("<name>", n.getDisplayName())
-                                            .replace("<group>", n.getGroup())
-                                            .replace("<id>", n.getName());
-                                    p.sendMessage(ColorUtils.parse(msg));
+                                if (ctx.getSource().getExecutor() instanceof Player p) {
+                                    p.sendMessage(ColorUtils.parse(plugin.getMsg().getString("list-header")));
+                                    for (Node n : plugin.getGraphManager().getNodes()) {
+                                        if (!plugin.getGraphManager().canAccess(p, n)) continue;
+                                        if (n.getDisplayName().startsWith("node_")) continue;
+                                        String msg = plugin.getMsg().getString("list-item")
+                                                .replace("<name>", n.getDisplayName())
+                                                .replace("<group>", n.getGroup())
+                                                .replace("<id>", n.getName());
+                                        p.sendMessage(ColorUtils.parse(msg));
+                                    }
                                 }
                                 return 1;
                             })
@@ -63,6 +64,12 @@ public class GPSCommand {
                     .then(Commands.literal("setname")
                             .requires(source -> source.getSender().hasPermission("gps.admin"))
                             .then(Commands.argument("node_id", StringArgumentType.word())
+                                    .suggests((ctx, builder) -> {
+                                        for (Node n : plugin.getGraphManager().getNodes()) {
+                                            builder.suggest(n.getId());
+                                        }
+                                        return builder.buildFuture();
+                                    })
                                     .then(Commands.argument("display_name", StringArgumentType.greedyString())
                                             .executes(ctx -> {
                                                 if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
@@ -90,8 +97,10 @@ public class GPSCommand {
                     .then(Commands.literal("to")
                             .then(Commands.argument("target", StringArgumentType.greedyString())
                                     .suggests((ctx, builder) -> {
-                                        for (Node n : plugin.getGraphManager().getNodes())
-                                            builder.suggest(ColorUtils.stripColor(n.getDisplayName()));
+                                        for (Node n : plugin.getGraphManager().getNodes()) {
+                                            if (!n.getDisplayName().contains("node_"))
+                                                builder.suggest(ColorUtils.stripColor(n.getDisplayName()));
+                                        }
                                         return builder.buildFuture();
                                     })
                                     .executes(ctx -> {

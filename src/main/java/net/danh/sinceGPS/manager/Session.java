@@ -18,12 +18,17 @@ public class Session {
     private final Player player;
     private final Node targetNode;
     private final BossBar bossBar;
-    // Configs
+
+    // Cached Configs
     private final double reachDist;
     private final double rerouteDist;
+    private final Particle particleType;
     private final Particle.DustOptions pathColor;
     private final Particle.DustOptions pulseColor;
-    private final Particle particleType;
+    private final double pulseSpeed;
+    private final boolean arrowEnabled;
+    private final String arrowFwd, arrowLeft, arrowRight, arrowBack;
+
     private List<Location> path;
     private int pathIndex = 0;
     private double pulseOffset = 0;
@@ -34,25 +39,30 @@ public class Session {
         this.player = player;
         this.path = path;
         this.targetNode = targetNode;
+
+        // Cache settings once
         this.reachDist = plugin.getCfg().getDouble("settings.reach-distance", 3.0);
         this.rerouteDist = plugin.getCfg().getDouble("settings.navigation.reroute-distance", 12.0);
+        this.pulseSpeed = plugin.getCfg().getDouble("visuals.navigation.pulse-speed", 1.5);
+        this.arrowEnabled = plugin.getCfg().getBoolean("visuals.navigation.arrow-enabled", true);
 
-        String[] pc = plugin.getCfg().getString("visuals.path-color", "0,255,255").split(",");
-        String[] uc = plugin.getCfg().getString("visuals.pulse-color", "255,165,0").split(",");
+        String[] pc = plugin.getCfg().getString("visuals.navigation.path-color", "0,255,255").split(",");
+        String[] uc = plugin.getCfg().getString("visuals.navigation.pulse-color", "255,165,0").split(",");
         this.pathColor = new Particle.DustOptions(Color.fromRGB(Integer.parseInt(pc[0].trim()), Integer.parseInt(pc[1].trim()), Integer.parseInt(pc[2].trim())), 1f);
         this.pulseColor = new Particle.DustOptions(Color.fromRGB(Integer.parseInt(uc[0].trim()), Integer.parseInt(uc[1].trim()), Integer.parseInt(uc[2].trim())), 1.5f);
 
         Particle type;
         try {
-            type = Particle.valueOf("DUST");
-        } catch (IllegalArgumentException e) {
-            try {
-                type = Particle.valueOf("REDSTONE");
-            } catch (IllegalArgumentException ex) {
-                type = Particle.HAPPY_VILLAGER;
-            }
+            type = Particle.valueOf(plugin.getCfg().getString("visuals.navigation.path-type", "DUST"));
+        } catch (Exception e) {
+            type = Particle.DUST;
         }
         this.particleType = type;
+
+        this.arrowFwd = plugin.getCfg().getString("action-bar.arrows.forward", "⬆");
+        this.arrowLeft = plugin.getCfg().getString("action-bar.arrows.left", "⬅");
+        this.arrowRight = plugin.getCfg().getString("action-bar.arrows.right", "➡");
+        this.arrowBack = plugin.getCfg().getString("action-bar.arrows.backward", "⬇");
 
         this.bossBar = BossBar.bossBar(Component.empty(), 1.0f, BossBar.Color.BLUE, BossBar.Overlay.PROGRESS);
         player.showBossBar(bossBar);
@@ -62,7 +72,6 @@ public class Session {
         if (!player.isOnline()) return true;
         Location pLoc = player.getLocation();
 
-        // 1. SMART PROGRESS (Nhảy cóc nếu đi tắt)
         int searchRange = 100;
         int max = Math.min(pathIndex + searchRange, path.size());
         double closestDistSq = Double.MAX_VALUE;
@@ -77,15 +86,11 @@ public class Session {
         }
         if (newIndex > pathIndex) pathIndex = newIndex;
 
-        // 2. AUTO REROUTE (Nếu đi lệch đường)
-        if (System.currentTimeMillis() - lastRerouteCheck > 1000) { // Check mỗi 1s
-            if (closestDistSq > (rerouteDist * rerouteDist)) {
-                triggerReroute(pLoc);
-            }
+        if (System.currentTimeMillis() - lastRerouteCheck > (plugin.getCfg().getInt("settings.navigation.check-interval") * 50L)) {
+            if (closestDistSq > (rerouteDist * rerouteDist)) triggerReroute(pLoc);
             lastRerouteCheck = System.currentTimeMillis();
         }
 
-        // 3. ARRIVAL
         double distToEnd = pLoc.distance(path.get(path.size() - 1));
         if (distToEnd < reachDist) {
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("arrived")));
@@ -94,7 +99,6 @@ public class Session {
             return true;
         }
 
-        // 4. VISUALS
         String title = plugin.getMsg().getString("bossbar-title").replace("<dist>", String.format("%.1f", distToEnd));
         bossBar.name(ColorUtils.parse(title));
         bossBar.progress((float) Math.max(0, Math.min(1, 1 - (distToEnd / (distToEnd + 50)))));
@@ -127,8 +131,7 @@ public class Session {
 
         for (int i = pathIndex; i < end; i += 2) spawnDust(path.get(i), pathColor);
 
-        double speed = plugin.getCfg().getDouble("visuals.pulse-speed", 1.5);
-        pulseOffset += speed;
+        pulseOffset += pulseSpeed;
         if (pulseOffset > view * 2) pulseOffset = 0;
 
         int pIdx = pathIndex + (int) pulseOffset;
@@ -137,18 +140,19 @@ public class Session {
             if (pIdx > 0) spawnDust(path.get(pIdx - 1), pulseColor);
         }
 
-        // 3D Arrow
-        int arrowIdx = Math.min(pathIndex + 8, path.size() - 1);
-        Location target = path.get(arrowIdx);
-        Vector dir = target.toVector().subtract(pLoc.toVector()).normalize();
-        Location center = pLoc.clone().add(dir.clone().multiply(2)).add(0, 0.5, 0);
+        if (arrowEnabled) {
+            int arrowIdx = Math.min(pathIndex + 8, path.size() - 1);
+            Location target = path.get(arrowIdx);
+            Vector dir = target.toVector().subtract(pLoc.toVector()).normalize();
+            Location center = pLoc.clone().add(dir.clone().multiply(2)).add(0, 0.5, 0);
 
-        Vector cross = dir.getCrossProduct(new Vector(0, 1, 0)).normalize().multiply(0.5);
-        Vector back = dir.clone().multiply(-0.5);
+            Vector cross = dir.getCrossProduct(new Vector(0, 1, 0)).normalize().multiply(0.5);
+            Vector back = dir.clone().multiply(-0.5);
 
-        spawnDust(center, pulseColor);
-        spawnDust(center.clone().add(back).add(cross), pulseColor);
-        spawnDust(center.clone().add(back).subtract(cross), pulseColor);
+            spawnDust(center, pulseColor);
+            spawnDust(center.clone().add(back).add(cross), pulseColor);
+            spawnDust(center.clone().add(back).subtract(cross), pulseColor);
+        }
     }
 
     private void renderActionBar(Location pLoc) {
@@ -161,10 +165,10 @@ public class Session {
         while (angle > 180) angle -= 360;
 
         String arrow;
-        if (angle > -45 && angle <= 45) arrow = plugin.getCfg().getString("action-bar.arrows.forward");
-        else if (angle > 45 && angle <= 135) arrow = plugin.getCfg().getString("action-bar.arrows.right");
-        else if (angle > -135 && angle <= -45) arrow = plugin.getCfg().getString("action-bar.arrows.left");
-        else arrow = plugin.getCfg().getString("action-bar.arrows.backward");
+        if (angle > -45 && angle <= 45) arrow = arrowFwd;
+        else if (angle > 45 && angle <= 135) arrow = arrowRight;
+        else if (angle > -135 && angle <= -45) arrow = arrowLeft;
+        else arrow = arrowBack;
 
         double dist = pLoc.distance(path.get(path.size() - 1));
         String msg = plugin.getCfg().getString("action-bar.format").replace("<arrow>", arrow).replace("<dist>", String.format("%.1f", dist));
@@ -173,9 +177,12 @@ public class Session {
 
     private void spawnDust(Location loc, Particle.DustOptions dust) {
         try {
-            if (particleType == Particle.HAPPY_VILLAGER)
+            // Hỗ trợ cả particle thường và Dust
+            if (particleType == Particle.DUST) {
+                player.spawnParticle(particleType, loc.clone().add(0, 0.5, 0), 1, 0, 0, 0, 0, dust);
+            } else {
                 player.spawnParticle(particleType, loc.clone().add(0, 0.5, 0), 1, 0, 0, 0, 0);
-            else player.spawnParticle(particleType, loc.clone().add(0, 0.5, 0), 1, 0, 0, 0, 0, dust);
+            }
         } catch (Exception ignored) {
         }
     }

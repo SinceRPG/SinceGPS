@@ -1,23 +1,69 @@
 settings:
-  # Tự động cập nhật nếu mục tiêu di chuyển (blocks)
-  dynamic-update-threshold: 3.0
-  max-nodes: 12000
-  fuzzy-match-threshold: 0.6
-  # Công thức khoảng cách đến nơi
-  arrival-formula: "1.5"
+  # Khoảng cách tối đa tìm node để bắt đầu dẫn đường
+  nearest-node-search-range: 100.0
+  # Khoảng cách để tính là "đến nơi"
+  reach-distance: 3.0
+  # Độ mượt đường cong (Spline). 8 là đẹp và nhẹ.
+  curve-resolution: 8
+
+  # [QUAN TRỌNG] Cấu hình Smart Recorder (Ghi hình thông minh)
+  recorder:
+    # Chỉ tạo node mới nếu khoảng cách > X block (Trừ khi đang cua)
+    min-distance: 8.0
+    # Nếu góc quay > X độ -> Tạo node ngay lập tức (Để ôm cua mượt)
+    angle-threshold: 15.0
+    # Khoảng cách để tự động bắt dính (snap) vào các con đường cũ (Tạo ngã tư)
+    snap-distance: 3.0
+
+  # [QUAN TRỌNG] Cấu hình Tự động tìm lại đường (Reroute)
+  navigation:
+    # Nếu đi lệch khỏi đường X mét -> Tính lại đường
+    reroute-distance: 12.0
+    # Thời gian check lại đường (ticks). 5 = 0.25s/lần
+    check-interval: 5
 
 visuals:
-  # Chế độ: PARTICLE
-  mode: PARTICLE
+  view-distance: 60.0
+  particle-type: REDSTONE
+  path-color: "0, 255, 255"
+  pulse-color: "255, 165, 0"
+  pulse-speed: 1.5
 
-  # Loại hạt: VILLAGER_HAPPY (Xanh lá), FLAME (Lửa), END_ROD (Trắng), etc.
-  particle: HAPPY_VILLAGER
+action-bar:
+  enabled: true
+  arrows:
+    forward: "⬆"
+    left: "⬅"
+    right: "➡"
+    backward: "⬇"
+  format: "<yellow><bold><arrow> <white>Đi về phía trước <gold><dist>m"
 
-  # Khoảng cách giữa các hạt (Càng nhỏ càng mượt nhưng tốn resource hơn)
-  # 0.25 là mức cân bằng đẹp nhất cho đường cong
-  particle-gap: 0.25
+groups:
+  default:
+    permission: ""
+    navigable: true
+  admin:
+    permission: "gps.group.admin"
+    navigable: true
 
-  # Tầm nhìn xa
-  view-distance: 25.0
-
-waypoints: { }
+sounds:
+  start:
+    enabled: true
+    type: BLOCK_BEACON_ACTIVATE
+    volume: 1.0
+    pitch: 2.0
+  stop:
+    enabled: true
+    type: BLOCK_NOTE_BLOCK_BASS
+    volume: 1.0
+    pitch: 0.5
+  arrive:
+    enabled: true
+    type: UI_TOAST_CHALLENGE_COMPLETE
+    volume: 1.0
+    pitch: 1.0
+  popup:
+    enabled: true
+    type: ENTITY_VILLAGER_NO
+    volume: 1.0
+    pitch: 1.0

@@ -1,20 +1,15 @@
 package net.danh.sinceGPS.command;
 
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import net.danh.sinceGPS.SinceGPS;
+import net.danh.sinceGPS.core.Node;
 import net.danh.sinceGPS.utils.ColorUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
-import java.util.Set;
-
 public class GPSCommand {
-
     private final SinceGPS plugin;
 
     public GPSCommand(SinceGPS plugin) {
@@ -26,132 +21,115 @@ public class GPSCommand {
             event.registrar().register(Commands.literal("gps")
                     .requires(source -> source.getSender().hasPermission("gps.use"))
 
-                    // --- RELOAD ---
                     .then(Commands.literal("reload")
                             .requires(source -> source.getSender().hasPermission("gps.admin"))
                             .executes(ctx -> {
                                 plugin.reloadPlugin();
-                                ctx.getSource().getSender().sendMessage(ColorUtils.parseWithPrefix("<green>Đã tải lại cấu hình."));
+                                ctx.getSource().getSender().sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("reload-success")));
                                 return 1;
                             })
                     )
-
-                    // --- TO COMMAND (Logic bạn yêu cầu) ---
-                    .then(Commands.literal("to")
-                            .then(Commands.argument("target_name", StringArgumentType.greedyString())
-                                    .suggests((ctx, builder) -> {
-                                        for (String key : plugin.getWaypoints().getWaypointNames()) {
-                                            builder.suggest(key);
-                                        }
-                                        return builder.buildFuture();
-                                    })
-                                    .executes(ctx -> {
-                                        if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
-                                        String inputName = StringArgumentType.getString(ctx, "target_name");
-
-                                        Set<String> keys = plugin.getWaypoints().getWaypointNames();
-
-                                        // 1. Tìm chính xác
-                                        if (keys.contains(inputName)) {
-                                            plugin.getNav().startStatic(p, plugin.getWaypoints().getWaypoint(inputName));
-                                            return 1;
-                                        }
-
-                                        // 2. Fuzzy Search (Tìm gần đúng)
-                                        String bestMatch = null;
-                                        double bestScore = 0.0;
-                                        for (String key : keys) {
-                                            double score = StringUtils.getJaroWinklerDistance(inputName, key);
-                                            if (score > bestScore) {
-                                                bestScore = score;
-                                                bestMatch = key;
-                                            }
-                                        }
-
-                                        // Kiểm tra ngưỡng giống nhau (mặc định 0.6)
-                                        if (bestScore > plugin.getSettingsConfig().getDouble("settings.fuzzy-match-threshold", 0.6) && bestMatch != null) {
-                                            String cMsg = plugin.getMessagesConfig().getString("correction").replace("<guess>", bestMatch);
-                                            p.sendMessage(ColorUtils.parseWithPrefix(cMsg));
-                                            plugin.getNav().startStatic(p, plugin.getWaypoints().getWaypoint(bestMatch));
-                                        } else {
-                                            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMessagesConfig().getString("not-found")));
-                                        }
-                                        return 1;
-                                    })
-                            )
+                    .then(Commands.literal("record")
+                            .requires(source -> source.getSender().hasPermission("gps.admin"))
+                            .executes(ctx -> {
+                                if (ctx.getSource().getExecutor() instanceof Player p)
+                                    plugin.getGraphManager().toggleRecord(p);
+                                return 1;
+                            })
                     )
-
-                    // --- TRACK COMMAND ---
-                    .then(Commands.literal("track")
-                            .then(Commands.argument("player_name", StringArgumentType.word())
-                                    .suggests((ctx, builder) -> {
-                                        for (Player p : Bukkit.getOnlinePlayers()) builder.suggest(p.getName());
-                                        return builder.buildFuture();
-                                    })
-                                    .executes(ctx -> {
-                                        if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
-                                        String tName = StringArgumentType.getString(ctx, "player_name");
-                                        Player target = Bukkit.getPlayer(tName);
-                                        if (target != null && target.isOnline()) {
-                                            plugin.getNav().startTracking(p, target);
-                                            String msg = plugin.getMessagesConfig().getString("tracking").replace("<target>", target.getName());
-                                            p.sendMessage(ColorUtils.parseWithPrefix(msg));
-                                        } else {
-                                            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMessagesConfig().getString("player-offline")));
-                                        }
-                                        return 1;
-                                    })
-                            )
-                    )
-
-                    // --- STOP COMMAND ---
                     .then(Commands.literal("stop")
                             .executes(ctx -> {
-                                if (ctx.getSource().getExecutor() instanceof Player p) {
-                                    plugin.getNav().stop(p, true);
+                                if (ctx.getSource().getExecutor() instanceof Player p)
+                                    plugin.getNav().stopNavigation(p, true);
+                                return 1;
+                            })
+                    )
+                    .then(Commands.literal("list")
+                            .executes(ctx -> {
+                                Player p = (Player) ctx.getSource().getExecutor();
+                                p.sendMessage(ColorUtils.parse(plugin.getMsg().getString("list-header")));
+                                for (Node n : plugin.getGraphManager().getNodes()) {
+                                    if (!plugin.getGraphManager().canAccess(p, n)) continue;
+                                    if (n.getName().startsWith("node_") && !p.hasPermission("gps.admin")) continue;
+                                    String msg = plugin.getMsg().getString("list-item")
+                                            .replace("<name>", n.getDisplayName())
+                                            .replace("<group>", n.getGroup())
+                                            .replace("<id>", n.getName());
+                                    p.sendMessage(ColorUtils.parse(msg));
                                 }
                                 return 1;
                             })
                     )
-
-                    // --- SET COMMAND ---
-                    .then(Commands.literal("set")
+                    .then(Commands.literal("setname")
                             .requires(source -> source.getSender().hasPermission("gps.admin"))
-                            .then(Commands.argument("name", StringArgumentType.word())
+                            .then(Commands.argument("node_id", StringArgumentType.word())
+                                    .then(Commands.argument("display_name", StringArgumentType.greedyString())
+                                            .executes(ctx -> {
+                                                if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
+                                                String nodeId = StringArgumentType.getString(ctx, "node_id");
+                                                String display = StringArgumentType.getString(ctx, "display_name");
+                                                Node target = plugin.getGraphManager().getNode(nodeId);
+                                                if (target == null) {
+                                                    try {
+                                                        target = plugin.getGraphManager().getNode(Integer.parseInt(nodeId));
+                                                    } catch (Exception ignored) {
+                                                    }
+                                                }
+                                                if (target != null) {
+                                                    target.setDisplayName(display);
+                                                    plugin.getGraphManager().save();
+                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("name-set").replace("<id>", String.valueOf(target.getId())).replace("<name>", display)));
+                                                } else {
+                                                    p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("node-not-found")));
+                                                }
+                                                return 1;
+                                            })
+                                    )
+                            )
+                    )
+                    .then(Commands.literal("to")
+                            .then(Commands.argument("target", StringArgumentType.greedyString())
+                                    .suggests((ctx, builder) -> {
+                                        for (Node n : plugin.getGraphManager().getNodes())
+                                            builder.suggest(ColorUtils.stripColor(n.getDisplayName()));
+                                        return builder.buildFuture();
+                                    })
                                     .executes(ctx -> {
                                         if (!(ctx.getSource().getExecutor() instanceof Player p)) return 0;
-                                        String name = StringArgumentType.getString(ctx, "name");
+                                        String input = StringArgumentType.getString(ctx, "target");
+                                        Node target = plugin.getGraphManager().getNode(input);
+                                        if (target == null) target = plugin.getGraphManager().getNodeByDisplay(input);
 
-                                        plugin.getWaypoints().setWaypoint(name, p.getLocation());
-
-                                        String msg = plugin.getMessagesConfig().getString("saved").replace("<name>", name);
-                                        p.sendMessage(ColorUtils.parseWithPrefix(msg));
+                                        if (target == null) {
+                                            String bestMatch = null;
+                                            double bestScore = 0.0;
+                                            for (Node n : plugin.getGraphManager().getNodes()) {
+                                                String plain = ColorUtils.stripColor(n.getDisplayName());
+                                                double score = StringUtils.getJaroWinklerDistance(input, plain);
+                                                if (score > bestScore) {
+                                                    bestScore = score;
+                                                    bestMatch = plain;
+                                                }
+                                            }
+                                            if (bestScore > 0.6) {
+                                                String realName = plugin.getGraphManager().getNodeByDisplay(bestMatch).getName();
+                                                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("correction").replace("<guess>", bestMatch).replace("<guess_raw>", realName)));
+                                                plugin.getCfg().playSound(p, "sounds.popup");
+                                            } else {
+                                                p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("node-not-found")));
+                                            }
+                                            return 1;
+                                        }
+                                        if (!plugin.getGraphManager().canAccess(p, target)) {
+                                            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("no-permission")));
+                                            return 1;
+                                        }
+                                        plugin.getNav().startNavigation(p, target);
                                         return 1;
                                     })
                             )
                     )
-
-                    // --- COORD COMMAND ---
-                    .then(Commands.literal("coord")
-                            .then(Commands.argument("x", DoubleArgumentType.doubleArg())
-                                    .then(Commands.argument("y", DoubleArgumentType.doubleArg())
-                                            .then(Commands.argument("z", DoubleArgumentType.doubleArg())
-                                                    .executes(ctx -> {
-                                                        if (!(ctx.getSource().getExecutor() instanceof Player p))
-                                                            return 0;
-                                                        double x = DoubleArgumentType.getDouble(ctx, "x");
-                                                        double y = DoubleArgumentType.getDouble(ctx, "y");
-                                                        double z = DoubleArgumentType.getDouble(ctx, "z");
-
-                                                        plugin.getNav().startStatic(p, new Location(p.getWorld(), x, y, z));
-                                                        return 1;
-                                                    })
-                                            )
-                                    )
-                            )
-                    )
-
-                    .build(), "GPS Navigation System"
+                    .build(), "GPS System"
             );
         });
     }

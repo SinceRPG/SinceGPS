@@ -1,12 +1,13 @@
 package net.danh.sinceGPS.manager;
 
 import net.danh.sinceGPS.SinceGPS;
+import net.danh.sinceGPS.core.Node;
 import net.danh.sinceGPS.utils.ColorUtils;
-import net.danh.sinceGPS.utils.FormulaUtils;
 import net.kyori.adventure.bossbar.BossBar;
+import net.kyori.adventure.text.Component;
+import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Particle;
-import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.util.Vector;
 
@@ -14,116 +15,172 @@ import java.util.List;
 
 public class Session {
     private final SinceGPS plugin;
-    private final Player p;
-    private final TargetWrapper target;
+    private final Player player;
+    private final Node targetNode;
     private final BossBar bossBar;
+    // Configs
+    private final double reachDist;
+    private final double rerouteDist;
+    private final Particle.DustOptions pathColor;
+    private final Particle.DustOptions pulseColor;
+    private final Particle particleType;
     private List<Location> path;
-    private int index = 0;
-    private int animTick = 0;
-    private double arrivalDist;
+    private int pathIndex = 0;
+    private double pulseOffset = 0;
+    private long lastRerouteCheck = 0;
 
-    public Session(SinceGPS plugin, Player p, TargetWrapper target, List<Location> path, BossBar bossBar) {
+    public Session(SinceGPS plugin, Player player, List<Location> path, Node targetNode) {
         this.plugin = plugin;
-        this.p = p;
-        this.target = target;
+        this.player = player;
         this.path = path;
-        this.bossBar = bossBar;
+        this.targetNode = targetNode;
+        this.reachDist = plugin.getCfg().getDouble("settings.reach-distance", 3.0);
+        this.rerouteDist = plugin.getCfg().getDouble("settings.navigation.reroute-distance", 12.0);
 
-        String formula = plugin.getSettingsConfig().getString("settings.arrival-formula", "2.0");
+        String[] pc = plugin.getCfg().getString("visuals.path-color", "0,255,255").split(",");
+        String[] uc = plugin.getCfg().getString("visuals.pulse-color", "255,165,0").split(",");
+        this.pathColor = new Particle.DustOptions(Color.fromRGB(Integer.parseInt(pc[0].trim()), Integer.parseInt(pc[1].trim()), Integer.parseInt(pc[2].trim())), 1f);
+        this.pulseColor = new Particle.DustOptions(Color.fromRGB(Integer.parseInt(uc[0].trim()), Integer.parseInt(uc[1].trim()), Integer.parseInt(uc[2].trim())), 1.5f);
+
+        Particle type;
         try {
-            this.arrivalDist = FormulaUtils.eval(formula);
-        } catch (Exception e) {
-            this.arrivalDist = 2.0;
+            type = Particle.valueOf("DUST");
+        } catch (IllegalArgumentException e) {
+            try {
+                type = Particle.valueOf("REDSTONE");
+            } catch (IllegalArgumentException ex) {
+                type = Particle.HAPPY_VILLAGER;
+            }
         }
+        this.particleType = type;
+
+        this.bossBar = BossBar.bossBar(Component.empty(), 1.0f, BossBar.Color.BLUE, BossBar.Overlay.PROGRESS);
+        player.showBossBar(bossBar);
     }
 
     public boolean update() {
-        if (!p.isOnline() || !target.isValid() || !p.getWorld().equals(target.getLocation().getWorld())) return true;
+        if (!player.isOnline()) return true;
+        Location pLoc = player.getLocation();
 
-        Location pLoc = p.getLocation();
-        Location tLoc = target.getLocation();
-        double dist = pLoc.distance(tLoc);
+        // 1. SMART PROGRESS (Nhảy cóc nếu đi tắt)
+        int searchRange = 100;
+        int max = Math.min(pathIndex + searchRange, path.size());
+        double closestDistSq = Double.MAX_VALUE;
+        int newIndex = pathIndex;
 
-        bossBar.name(ColorUtils.parse("<bold>Mục tiêu:</bold> <yellow>" + String.format("%.1f", dist) + "m"));
-        bossBar.progress((float) Math.max(0.0, Math.min(1.0, 1.0 - (dist / 100.0))));
-
-        if (dist < arrivalDist) {
-            p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMessagesConfig().getString("arrived")));
-            p.playSound(pLoc, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1, 1);
-            cleanup();
-            return true;
-        }
-
-        if (target.isDynamic()) {
-            Location endOfPath = path.get(path.size() - 1);
-            if (endOfPath.distance(tLoc) > plugin.getSettingsConfig().getDouble("settings.dynamic-update-threshold", 3.0)) {
-                cleanup();
-                plugin.getNav().startTracking(p, target.getEntity());
-                return true;
+        for (int i = pathIndex; i < max; i++) {
+            double d = pLoc.distanceSquared(path.get(i));
+            if (d < closestDistSq) {
+                closestDistSq = d;
+                newIndex = i;
             }
         }
+        if (newIndex > pathIndex) pathIndex = newIndex;
 
-        updateIndex(pLoc);
+        // 2. AUTO REROUTE (Nếu đi lệch đường)
+        if (System.currentTimeMillis() - lastRerouteCheck > 1000) { // Check mỗi 1s
+            if (closestDistSq > (rerouteDist * rerouteDist)) {
+                triggerReroute(pLoc);
+            }
+            lastRerouteCheck = System.currentTimeMillis();
+        }
 
-        Location currentTargetPoint = path.get(Math.min(index, path.size() - 1));
-        if (path.isEmpty() || pLoc.distance(currentTargetPoint) > 15.0) {
+        // 3. ARRIVAL
+        double distToEnd = pLoc.distance(path.get(path.size() - 1));
+        if (distToEnd < reachDist) {
+            player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("arrived")));
+            plugin.getCfg().playSound(player, "sounds.arrive");
             cleanup();
-            if (target.isDynamic()) plugin.getNav().startTracking(p, target.getEntity());
-            else plugin.getNav().startStatic(p, tLoc);
             return true;
         }
 
-        drawParticles(pLoc);
+        // 4. VISUALS
+        String title = plugin.getMsg().getString("bossbar-title").replace("<dist>", String.format("%.1f", distToEnd));
+        bossBar.name(ColorUtils.parse(title));
+        bossBar.progress((float) Math.max(0, Math.min(1, 1 - (distToEnd / (distToEnd + 50)))));
+
+        renderParticles(pLoc);
+        renderActionBar(pLoc);
         return false;
     }
 
-    private void updateIndex(Location pLoc) {
-        double closest = Double.MAX_VALUE;
-        int maxSearch = Math.min(index + 20, path.size());
-        for (int i = index; i < maxSearch; i++) {
-            double d = pLoc.distance(path.get(i));
-            if (d < closest) {
-                closest = d;
-                // Nếu < 4 block thì chuyển sang điểm tiếp theo
-                if (d < 4.0 && i >= index) index = i;
-            }
+    private void triggerReroute(Location pLoc) {
+        Node startNode = plugin.getGraphManager().getNearestNode(pLoc);
+        if (startNode != null) {
+            player.sendActionBar(ColorUtils.parse(plugin.getMsg().getString("rerouting")));
+            plugin.getServer().getScheduler().runTaskAsynchronously(plugin.inst(), () -> {
+                List<Location> newPath = PathFinder.findPath(startNode, targetNode, plugin.getGraphManager());
+                if (newPath != null && !newPath.isEmpty()) {
+                    List<Location> smooth = PathFinder.smoothPath(newPath, plugin.getCfg().getInt("settings.curve-resolution", 8));
+                    plugin.getServer().getScheduler().runTask(plugin.inst(), () -> {
+                        this.path = smooth;
+                        this.pathIndex = 0;
+                    });
+                }
+            });
         }
     }
 
-    private void drawParticles(Location pLoc) {
-        animTick++;
-        double view = plugin.getSettingsConfig().getDouble("visuals.view-distance", 25.0);
+    private void renderParticles(Location pLoc) {
+        int view = (int) plugin.getCfg().getDouble("visuals.view-distance", 60.0);
+        int end = Math.min(pathIndex + view * 2, path.size());
 
-        String pName = plugin.getSettingsConfig().getString("visuals.particle", "HAPPY_VILLAGER");
-        Particle particle;
-        try {
-            particle = Particle.valueOf(pName);
-        } catch (Exception e) {
-            particle = Particle.HAPPY_VILLAGER;
+        for (int i = pathIndex; i < end; i += 2) spawnDust(path.get(i), pathColor);
+
+        double speed = plugin.getCfg().getDouble("visuals.pulse-speed", 1.5);
+        pulseOffset += speed;
+        if (pulseOffset > view * 2) pulseOffset = 0;
+
+        int pIdx = pathIndex + (int) pulseOffset;
+        if (pIdx < path.size()) {
+            spawnDust(path.get(pIdx), pulseColor);
+            if (pIdx > 0) spawnDust(path.get(pIdx - 1), pulseColor);
         }
 
-        double gap = plugin.getSettingsConfig().getDouble("visuals.particle-gap", 0.25);
+        // 3D Arrow
+        int arrowIdx = Math.min(pathIndex + 8, path.size() - 1);
+        Location target = path.get(arrowIdx);
+        Vector dir = target.toVector().subtract(pLoc.toVector()).normalize();
+        Location center = pLoc.clone().add(dir.clone().multiply(2)).add(0, 0.5, 0);
 
-        // [CẢI TIẾN] Hiệu ứng dòng chảy: Offset chạy từ 0 -> 1 liên tục
-        double offset = (animTick % 10) / 10.0;
+        Vector cross = dir.getCrossProduct(new Vector(0, 1, 0)).normalize().multiply(0.5);
+        Vector back = dir.clone().multiply(-0.5);
 
-        for (int i = index; i < path.size() - 1; i++) {
-            Location p1 = path.get(i);
-            if (p1.distance(pLoc) > view) break;
+        spawnDust(center, pulseColor);
+        spawnDust(center.clone().add(back).add(cross), pulseColor);
+        spawnDust(center.clone().add(back).subtract(cross), pulseColor);
+    }
 
-            Location p2 = path.get(i + 1);
-            Vector dir = p2.toVector().subtract(p1.toVector());
-            double len = dir.length();
-            dir.normalize();
+    private void renderActionBar(Location pLoc) {
+        if (!plugin.getCfg().getBoolean("action-bar.enabled")) return;
+        Location next = path.get(Math.min(pathIndex + 8, path.size() - 1));
+        Vector dir = next.toVector().subtract(pLoc.toVector()).normalize();
+        Vector pDir = pLoc.getDirection().setY(0).normalize();
+        double angle = Math.toDegrees(Math.atan2(dir.getZ(), dir.getX()) - Math.atan2(pDir.getZ(), pDir.getX()));
+        while (angle <= -180) angle += 360;
+        while (angle > 180) angle -= 360;
 
-            // Vẽ hạt chạy dọc theo vector
-            for (double d = offset * gap; d < len; d += gap) {
-                p.spawnParticle(particle, p1.clone().add(dir.clone().multiply(d)), 1, 0, 0, 0, 0);
-            }
+        String arrow;
+        if (angle > -45 && angle <= 45) arrow = plugin.getCfg().getString("action-bar.arrows.forward");
+        else if (angle > 45 && angle <= 135) arrow = plugin.getCfg().getString("action-bar.arrows.right");
+        else if (angle > -135 && angle <= -45) arrow = plugin.getCfg().getString("action-bar.arrows.left");
+        else arrow = plugin.getCfg().getString("action-bar.arrows.backward");
+
+        double dist = pLoc.distance(path.get(path.size() - 1));
+        String msg = plugin.getCfg().getString("action-bar.format").replace("<arrow>", arrow).replace("<dist>", String.format("%.1f", dist));
+        player.sendActionBar(ColorUtils.parse(msg));
+    }
+
+    private void spawnDust(Location loc, Particle.DustOptions dust) {
+        try {
+            if (particleType == Particle.HAPPY_VILLAGER)
+                player.spawnParticle(particleType, loc.clone().add(0, 0.5, 0), 1, 0, 0, 0, 0);
+            else player.spawnParticle(particleType, loc.clone().add(0, 0.5, 0), 1, 0, 0, 0, 0, dust);
+        } catch (Exception ignored) {
         }
     }
 
     public void cleanup() {
-        p.hideBossBar(bossBar);
+        player.hideBossBar(bossBar);
     }
 }

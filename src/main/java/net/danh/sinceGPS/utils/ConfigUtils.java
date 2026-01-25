@@ -1,11 +1,14 @@
 package net.danh.sinceGPS.utils;
 
 import net.danh.sinceGPS.SinceGPS;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.Registry;
+import org.bukkit.Sound;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.IOException;
@@ -72,14 +75,12 @@ public class ConfigUtils {
         return config.getBoolean(path, def);
     }
 
-    public List<String> getStringList(String path) {
-        return config.getStringList(path);
+    public boolean getBoolean(String path) {
+        return config.getBoolean(path);
     }
 
-    public Component getComponent(String path) {
-        String raw = config.getString(path);
-        if (raw == null) return Component.empty();
-        return ColorUtils.parse(raw);
+    public List<String> getStringList(String path) {
+        return config.getStringList(path);
     }
 
     public void set(String path, Object value) {
@@ -101,5 +102,35 @@ public class ConfigUtils {
 
     public FileConfiguration getConfig() {
         return config;
+    }
+
+    public void playSound(Player p, String path) {
+        if (!config.getBoolean(path + ".enabled", true)) return;
+        String soundName = config.getString(path + ".type");
+        Sound sound = getSoundSafe(soundName);
+        if (sound == null) return;
+        try {
+            float vol = (float) config.getDouble(path + ".volume", 1.0);
+            float pitch = (float) config.getDouble(path + ".pitch", 1.0);
+            p.playSound(p.getLocation(), sound, vol, pitch);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private Sound getSoundSafe(String name) {
+        if (name == null) return null;
+        try {
+            NamespacedKey key = NamespacedKey.fromString(name.toLowerCase());
+            if (key != null) {
+                Sound s = Registry.SOUND_EVENT.get(key);
+                if (s != null) return s;
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            return (Sound) Sound.class.getField(name.toUpperCase()).get(null);
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 }

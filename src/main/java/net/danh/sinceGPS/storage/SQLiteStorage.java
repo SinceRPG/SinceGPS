@@ -4,15 +4,23 @@ import net.danh.sinceGPS.SinceGPS;
 import net.danh.sinceGPS.core.Node;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 
 import java.io.File;
-import java.sql.*;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 
 public class SQLiteStorage {
     private final SinceGPS plugin;
+    private final Object lock = new Object();
     private Connection connection;
     private String tableNodes;
     private String tableEdges;
@@ -29,146 +37,180 @@ public class SQLiteStorage {
         this.tableNodes = prefix + "nodes";
         this.tableEdges = prefix + "edges";
 
-        File dataFolder = new File(plugin.getDataFolder(), fileName);
-        if (!dataFolder.exists()) {
+        File databaseFile = new File(plugin.getDataFolder(), fileName);
+        if (!databaseFile.exists()) {
             try {
-                dataFolder.getParentFile().mkdirs();
-                dataFolder.createNewFile();
-            } catch (Exception e) {
-                plugin.getLogger().severe("Không thể tạo file database!");
+                File parent = databaseFile.getParentFile();
+                if (parent != null) parent.mkdirs();
+                databaseFile.createNewFile();
+            } catch (IOException exception) {
+                plugin.getLogger().log(Level.SEVERE, "Could not create SQLite database file.", exception);
             }
         }
 
         try {
             Class.forName("org.sqlite.JDBC");
-            connection = DriverManager.getConnection("jdbc:sqlite:" + dataFolder.getAbsolutePath());
+            connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile.getAbsolutePath());
             createTables();
-        } catch (Exception e) {
-            plugin.getLogger().severe("Lỗi kết nối SQLite: " + e.getMessage());
+        } catch (ReflectiveOperationException | SQLException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Could not connect to SQLite.", exception);
         }
     }
 
     private void createTables() {
-        String nodeTable = "CREATE TABLE IF NOT EXISTS " + tableNodes + " (" +
-                "id INTEGER PRIMARY KEY," +
-                "name TEXT," +
-                "display_name TEXT," +
-                "world TEXT," +
-                "x DOUBLE," +
-                "y DOUBLE," +
-                "z DOUBLE," +
-                "group_name TEXT" +
-                ");";
+        String nodeTable = "CREATE TABLE IF NOT EXISTS " + tableNodes + " ("
+                + "id INTEGER PRIMARY KEY,"
+                + "name TEXT NOT NULL,"
+                + "display_name TEXT,"
+                + "world TEXT NOT NULL,"
+                + "x DOUBLE,"
+                + "y DOUBLE,"
+                + "z DOUBLE,"
+                + "group_name TEXT"
+                + ");";
 
-        String edgeTable = "CREATE TABLE IF NOT EXISTS " + tableEdges + " (" +
-                "source_id INTEGER," +
-                "target_id INTEGER," +
-                "weight DOUBLE," +
-                "PRIMARY KEY (source_id, target_id)" +
-                ");";
+        String edgeTable = "CREATE TABLE IF NOT EXISTS " + tableEdges + " ("
+                + "source_id INTEGER,"
+                + "target_id INTEGER,"
+                + "weight DOUBLE,"
+                + "PRIMARY KEY (source_id, target_id)"
+                + ");";
 
-        try (Statement s = connection.createStatement()) {
-            s.execute(nodeTable);
-            s.execute(edgeTable);
-        } catch (SQLException e) {
-            e.printStackTrace();
+        synchronized (lock) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(nodeTable);
+                statement.execute(edgeTable);
+            } catch (SQLException exception) {
+                plugin.getLogger().log(Level.SEVERE, "Could not create SQLite tables.", exception);
+            }
         }
     }
 
     public Map<Integer, Node> loadNodes() {
         Map<Integer, Node> nodes = new HashMap<>();
-        try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM " + tableNodes)) {
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                int id = rs.getInt("id");
-                String worldName = rs.getString("world");
-                if (Bukkit.getWorld(worldName) == null) continue;
+        synchronized (lock) {
+            try (PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + tableNodes);
+                 ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    int id = result.getInt("id");
+                    World world = Bukkit.getWorld(result.getString("world"));
+                    if (world == null) continue;
 
-                Location loc = new Location(Bukkit.getWorld(worldName), rs.getDouble("x"), rs.getDouble("y"), rs.getDouble("z"));
-                Node node = new Node(id, loc, rs.getString("group_name"));
-                node.setName(rs.getString("name"));
-                node.setDisplayName(rs.getString("display_name"));
-                nodes.put(id, node);
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Lỗi load nodes", e);
-        }
-
-        try (PreparedStatement ps = connection.prepareStatement("SELECT * FROM " + tableEdges)) {
-            ResultSet rs = ps.executeQuery();
-            while (rs.next()) {
-                int sourceId = rs.getInt("source_id");
-                int targetId = rs.getInt("target_id");
-                double weight = rs.getDouble("weight");
-                Node source = nodes.get(sourceId);
-                if (source != null && nodes.containsKey(targetId)) {
-                    source.connect(targetId, weight);
+                    Location location = new Location(world, result.getDouble("x"), result.getDouble("y"), result.getDouble("z"));
+                    Node node = new Node(id, location, result.getString("group_name"));
+                    node.setName(result.getString("name"));
+                    node.setDisplayName(result.getString("display_name"));
+                    nodes.put(id, node);
                 }
+            } catch (SQLException exception) {
+                plugin.getLogger().log(Level.SEVERE, "Could not load GPS nodes.", exception);
             }
-        } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Lỗi load edges", e);
+
+            try (PreparedStatement statement = connection.prepareStatement("SELECT * FROM " + tableEdges);
+                 ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    int sourceId = result.getInt("source_id");
+                    int targetId = result.getInt("target_id");
+                    Node source = nodes.get(sourceId);
+                    if (source != null && nodes.containsKey(targetId)) {
+                        source.connect(targetId, result.getDouble("weight"));
+                    }
+                }
+            } catch (SQLException exception) {
+                plugin.getLogger().log(Level.SEVERE, "Could not load GPS edges.", exception);
+            }
         }
         return nodes;
     }
 
     public void saveAll(Map<Integer, Node> nodes) {
-        String insertNode = "REPLACE INTO " + tableNodes + " (id, name, display_name, world, x, y, z, group_name) VALUES(?,?,?,?,?,?,?,?)";
-        String insertEdge = "REPLACE INTO " + tableEdges + " (source_id, target_id, weight) VALUES(?,?,?)";
+        String insertNode = "INSERT OR REPLACE INTO " + tableNodes
+                + " (id, name, display_name, world, x, y, z, group_name) VALUES(?,?,?,?,?,?,?,?)";
+        String insertEdge = "INSERT OR REPLACE INTO " + tableEdges
+                + " (source_id, target_id, weight) VALUES(?,?,?)";
 
-        try {
-            connection.setAutoCommit(false);
-            try (PreparedStatement psNode = connection.prepareStatement(insertNode);
-                 PreparedStatement psEdge = connection.prepareStatement(insertEdge)) {
-
-                for (Node n : nodes.values()) {
-                    psNode.setInt(1, n.getId());
-                    psNode.setString(2, n.getName());
-                    psNode.setString(3, n.getDisplayName());
-                    psNode.setString(4, n.getLocation().getWorld().getName());
-                    psNode.setDouble(5, n.getLocation().getX());
-                    psNode.setDouble(6, n.getLocation().getY());
-                    psNode.setDouble(7, n.getLocation().getZ());
-                    psNode.setString(8, n.getGroup());
-                    psNode.addBatch();
-
-                    for (Map.Entry<Integer, Double> edge : n.getEdges().entrySet()) {
-                        psEdge.setInt(1, n.getId());
-                        psEdge.setInt(2, edge.getKey());
-                        psEdge.setDouble(3, edge.getValue());
-                        psEdge.addBatch();
-                    }
-                }
-                psNode.executeBatch();
-                psEdge.executeBatch();
-            }
-            connection.commit();
-            connection.setAutoCommit(true);
-        } catch (SQLException e) {
-            e.printStackTrace();
+        synchronized (lock) {
             try {
-                connection.rollback();
-            } catch (SQLException ex) {
-                ex.printStackTrace();
+                connection.setAutoCommit(false);
+                try (Statement clear = connection.createStatement();
+                     PreparedStatement nodeStatement = connection.prepareStatement(insertNode);
+                     PreparedStatement edgeStatement = connection.prepareStatement(insertEdge)) {
+                    clear.executeUpdate("DELETE FROM " + tableEdges);
+                    clear.executeUpdate("DELETE FROM " + tableNodes);
+
+                    for (Node node : nodes.values()) {
+                        Location location = node.getLocation();
+                        if (location.getWorld() == null) continue;
+
+                        nodeStatement.setInt(1, node.getId());
+                        nodeStatement.setString(2, node.getName());
+                        nodeStatement.setString(3, node.getDisplayName());
+                        nodeStatement.setString(4, location.getWorld().getName());
+                        nodeStatement.setDouble(5, location.getX());
+                        nodeStatement.setDouble(6, location.getY());
+                        nodeStatement.setDouble(7, location.getZ());
+                        nodeStatement.setString(8, node.getGroup());
+                        nodeStatement.addBatch();
+
+                        for (Map.Entry<Integer, Double> edge : node.getEdges().entrySet()) {
+                            edgeStatement.setInt(1, node.getId());
+                            edgeStatement.setInt(2, edge.getKey());
+                            edgeStatement.setDouble(3, edge.getValue());
+                            edgeStatement.addBatch();
+                        }
+                    }
+
+                    nodeStatement.executeBatch();
+                    edgeStatement.executeBatch();
+                }
+                connection.commit();
+            } catch (SQLException exception) {
+                rollback();
+                plugin.getLogger().log(Level.SEVERE, "Could not save GPS graph.", exception);
+            } finally {
+                try {
+                    connection.setAutoCommit(true);
+                } catch (SQLException exception) {
+                    plugin.getLogger().log(Level.WARNING, "Could not restore SQLite autocommit.", exception);
+                }
             }
         }
     }
 
     public void deleteNode(int id) {
-        Bukkit.getScheduler().runTaskAsynchronously(SinceGPS.inst(), () -> {
-            try (Statement s = connection.createStatement()) {
-                s.execute("DELETE FROM " + tableNodes + " WHERE id=" + id);
-                s.execute("DELETE FROM " + tableEdges + " WHERE source_id=" + id + " OR target_id=" + id);
-            } catch (SQLException e) {
-                e.printStackTrace();
+        String deleteNode = "DELETE FROM " + tableNodes + " WHERE id=?";
+        String deleteEdges = "DELETE FROM " + tableEdges + " WHERE source_id=? OR target_id=?";
+        plugin.getSchedulerAdapter().runAsync(() -> {
+            synchronized (lock) {
+                try (PreparedStatement nodeStatement = connection.prepareStatement(deleteNode);
+                     PreparedStatement edgeStatement = connection.prepareStatement(deleteEdges)) {
+                    nodeStatement.setInt(1, id);
+                    nodeStatement.executeUpdate();
+                    edgeStatement.setInt(1, id);
+                    edgeStatement.setInt(2, id);
+                    edgeStatement.executeUpdate();
+                } catch (SQLException exception) {
+                    plugin.getLogger().log(Level.SEVERE, "Could not delete GPS node " + id + ".", exception);
+                }
             }
         });
     }
 
-    public void close() {
+    private void rollback() {
         try {
-            if (connection != null && !connection.isClosed()) connection.close();
-        } catch (SQLException e) {
-            e.printStackTrace();
+            connection.rollback();
+        } catch (SQLException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Could not roll back SQLite transaction.", exception);
+        }
+    }
+
+    public void close() {
+        synchronized (lock) {
+            try {
+                if (connection != null && !connection.isClosed()) connection.close();
+            } catch (SQLException exception) {
+                plugin.getLogger().log(Level.WARNING, "Could not close SQLite connection.", exception);
+            }
         }
     }
 }

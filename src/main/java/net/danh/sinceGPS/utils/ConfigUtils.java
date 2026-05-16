@@ -13,6 +13,7 @@ import org.bukkit.entity.Player;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import java.util.logging.Level;
 
 public class ConfigUtils {
     private final SinceGPS plugin;
@@ -29,14 +30,15 @@ public class ConfigUtils {
     public void load() {
         file = new File(plugin.getDataFolder(), name);
         if (!file.exists()) {
-            file.getParentFile().mkdirs();
+            File parent = file.getParentFile();
+            if (parent != null) parent.mkdirs();
             if (plugin.getResource(name) != null) {
                 plugin.saveResource(name, false);
             } else {
                 try {
                     file.createNewFile();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                } catch (IOException exception) {
+                    plugin.getLogger().log(Level.SEVERE, "Could not create config file " + name + ".", exception);
                 }
             }
         }
@@ -46,8 +48,8 @@ public class ConfigUtils {
     public void save() {
         try {
             config.save(file);
-        } catch (IOException e) {
-            e.printStackTrace();
+        } catch (IOException exception) {
+            plugin.getLogger().log(Level.SEVERE, "Could not save config file " + name + ".", exception);
         }
     }
 
@@ -108,33 +110,34 @@ public class ConfigUtils {
         return config;
     }
 
-    public void playSound(Player p, String path) {
+    public void playSound(Player player, String path) {
         if (!config.getBoolean(path + ".enabled", true)) return;
-        String soundName = config.getString(path + ".type");
-        Sound sound = getSoundSafe(soundName);
+
+        Sound sound = getSoundSafe(config.getString(path + ".type"));
         if (sound == null) return;
+
         try {
-            float vol = (float) config.getDouble(path + ".volume", 1.0);
+            float volume = (float) config.getDouble(path + ".volume", 1.0);
             float pitch = (float) config.getDouble(path + ".pitch", 1.0);
-            p.playSound(p.getLocation(), sound, vol, pitch);
-        } catch (Exception ignored) {
+            player.playSound(player.getLocation(), sound, volume, pitch);
+        } catch (IllegalArgumentException ignored) {
+            // Invalid sound settings should not break gameplay.
         }
     }
 
     private Sound getSoundSafe(String name) {
-        if (name == null) return null;
-        try {
-            NamespacedKey key = NamespacedKey.fromString(name.toLowerCase());
-            if (key != null) {
-                Sound s = Registry.SOUND_EVENT.get(key);
-                if (s != null) return s;
-            }
-        } catch (Exception ignored) {
+        if (name == null || name.isBlank()) return null;
+
+        NamespacedKey key = NamespacedKey.fromString(name.toLowerCase());
+        if (key != null) {
+            Sound sound = Registry.SOUND_EVENT.get(key);
+            if (sound != null) return sound;
         }
+
         try {
             return (Sound) Sound.class.getField(name.toUpperCase()).get(null);
-        } catch (Exception ignored) {
+        } catch (ReflectiveOperationException ignored) {
+            return null;
         }
-        return null;
     }
 }

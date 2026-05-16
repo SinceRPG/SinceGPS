@@ -129,8 +129,9 @@ public class GPSCommand {
                     .then(Commands.literal("to")
                             .then(Commands.argument("target", StringArgumentType.greedyString())
                                     .suggests((ctx, builder) -> {
+                                        Player player = ctx.getSource().getExecutor() instanceof Player p ? p : null;
                                         for (Node n : plugin.getGraphManager().getNodes()) {
-                                            if (!n.getDisplayName().startsWith("node_") && !n.getDisplayName().startsWith("start_") && !n.getDisplayName().startsWith("stop_")) {
+                                            if ((player == null || plugin.getGraphManager().canAccess(player, n)) && isNamedDestination(n)) {
                                                 builder.suggest(ColorUtils.stripColor(n.getDisplayName()));
                                             }
                                         }
@@ -145,6 +146,7 @@ public class GPSCommand {
                                             String bestMatch = null;
                                             double bestScore = 0.0;
                                             for (Node n : plugin.getGraphManager().getNodes()) {
+                                                if (!plugin.getGraphManager().canAccess(p, n) || !isNamedDestination(n)) continue;
                                                 String plain = ColorUtils.stripColor(n.getDisplayName());
                                                 double score = SimilarityUtils.getJaroWinklerDistance(input, plain);
                                                 if (score > bestScore) {
@@ -152,7 +154,8 @@ public class GPSCommand {
                                                     bestMatch = plain;
                                                 }
                                             }
-                                            if (bestScore > 0.6 && bestMatch != null) {
+                                            double threshold = plugin.getCfg().getDouble("settings.navigation.suggestion-threshold", 0.6);
+                                            if (bestScore > threshold && bestMatch != null) {
                                                 Node realNode = plugin.getGraphManager().getNodeByDisplay(bestMatch);
                                                 String suggestion = (realNode != null) ? String.valueOf(realNode.getId()) : bestMatch;
                                                 p.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("correction").replace("<guess>", bestMatch).replace("<guess_raw>", suggestion)));
@@ -187,5 +190,10 @@ public class GPSCommand {
     private String getFriendlyId(Node n) {
         if (n.getName().equals("node_" + n.getId())) return String.valueOf(n.getId());
         return n.getName();
+    }
+
+    private boolean isNamedDestination(Node node) {
+        String displayName = node.getDisplayName();
+        return !displayName.startsWith("node_") && !displayName.startsWith("start_") && !displayName.startsWith("stop_");
     }
 }

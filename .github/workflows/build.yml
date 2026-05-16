@@ -1,0 +1,193 @@
+# FILE PATH: .github/workflows/build.yml
+name: SinceGPS CI/CD
+
+# Trigger the workflow on push to any branch
+on:
+  push:
+    branches:
+      - '**'
+
+# Define all global environment variables
+env:
+  # Base Webhook URL (NO ?thread_id AT THE END)
+  WEBHOOK_URL: "https://discord.com/api/webhooks/1471469221614583810/pfMtLyRbTDKiUGMJyVBjhhJ3RDgQelOX71iMGqWg3HdrlokqBJSt1Ox3aC4yTkkGtZ-_"
+  THREAD_ID: "1471474454499557518"
+
+  # Gradle Settings
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+  # Bot Identity & Assets
+  ICON_URL: "https://gitlab.com/uploads/-/system/group/avatar/121690756/SinceRPG.png?width=48"
+  THUMBNAIL_URL: "https://gitlab.com/uploads/-/system/group/avatar/121690756/SinceRPG.png?width=48"
+  BOT_USERNAME: "SinceGPS Build"
+
+  # Embed Colors (Decimal format)
+  COLOR_PENDING: "16766720" # Yellow
+  COLOR_SUCCESS: "5763719"  # Green
+  COLOR_FAIL: "15548997"    # Red
+
+  # Default Texts
+  NO_CHANGELOG_TEXT: "No specific changelog provided."
+  FAIL_DESC_TEXT: "A syntax or compilation error occurred. Please check the GitHub Actions Console."
+
+jobs:
+  build_and_notify:
+    name: Build & Discord Notify
+    runs-on: ubuntu-latest
+
+    steps:
+      # --- STEP 0: PREPARE ENVIRONMENT ---
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to fetch git log history for commits
+
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle' # Automatically handles Gradle caching
+
+      # --- STEP 1: NOTIFY BUILD START ---
+      - name: Notify Start to Discord
+        id: notify_start
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          AUTHOR=$(git log -1 --pretty=%an)
+          HASH=$(git log -1 --pretty=%h)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          if [ -f "./gradlew" ]; then GRADLE_CMD="./gradlew"; else GRADLE_CMD="gradle"; fi
+          VERSION=$($GRADLE_CMD properties -q | grep "^version:" | awk '{print $2}' || echo "Unknown")
+          
+          # Handle empty changelog
+          [ -z "$(echo "$COMMIT_MSG" | tr -d '[:space:]')" ] && COMMIT_MSG="$NO_CHANGELOG_TEXT"
+
+          # CREATE PENDING MESSAGE
+          jq -n \
+            --arg author "$AUTHOR triggered a build for SinceGPS" \
+            --arg desc "$COMMIT_MSG" \
+            --arg footer "Version $VERSION • $HASH" \
+            --arg timestamp "$TIMESTAMP" \
+            --arg icon "$ICON_URL" \
+            --arg thumb "$THUMBNAIL_URL" \
+            --arg bot_name "$BOT_USERNAME" \
+            --argjson color "$COLOR_PENDING" \
+            '{
+              username: $bot_name,
+              avatar_url: $icon,
+              embeds: [{
+                color: $color,
+                author: { name: $author, icon_url: $icon },
+                title: "⏳ Building...",
+                description: $desc,
+                thumbnail: { url: $thumb },
+                footer: { text: $footer },
+                timestamp: $timestamp
+              }]
+            }' > build_start.json
+
+          # Send message and extract ID, save to GITHUB_ENV
+          RESPONSE=$(curl -s -X POST -H "Content-Type: application/json" -d @build_start.json "${WEBHOOK_URL}?thread_id=${THREAD_ID}&wait=true")
+          MSG_ID=$(echo $RESPONSE | jq -r '.id')
+          if [ "$MSG_ID" != "null" ]; then echo "MSG_ID=$MSG_ID" >> $GITHUB_ENV; fi
+
+      # --- STEP 2: ACTUAL BUILD PROCESS ---
+      - name: Build with Gradle
+        run: |
+          if [ -f "./gradlew" ]; then
+             chmod +x ./gradlew
+             ./gradlew clean build
+          else
+             gradle clean build
+          fi
+
+      # --- STEP 3A: NOTIFY BUILD SUCCESS ---
+      - name: Notify Success & Upload JAR to Discord
+        if: success()
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          AUTHOR=$(git log -1 --pretty=%an)
+          HASH=$(git log -1 --pretty=%h)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          if [ -f "./gradlew" ]; then GRADLE_CMD="./gradlew"; else GRADLE_CMD="gradle"; fi
+          VERSION=$($GRADLE_CMD properties -q | grep "^version:" | awk '{print $2}' || echo "Unknown")
+          
+          [ -z "$(echo "$COMMIT_MSG" | tr -d '[:space:]')" ] && COMMIT_MSG="$NO_CHANGELOG_TEXT"
+
+          # EDIT MESSAGE ON SUCCESS
+          if [ -n "$MSG_ID" ]; then
+            jq -n \
+              --arg author "$AUTHOR pushed an update for SinceGPS" \
+              --arg desc "$COMMIT_MSG" \
+              --arg footer "Version $VERSION • $HASH" \
+              --arg timestamp "$TIMESTAMP" \
+              --arg icon "$ICON_URL" \
+              --arg thumb "$THUMBNAIL_URL" \
+              --argjson color "$COLOR_SUCCESS" \
+              '{
+                embeds: [{
+                  color: $color,
+                  author: { name: $author, icon_url: $icon },
+                  title: "Build Successful! 🚀",
+                  description: $desc,
+                  thumbnail: { url: $thumb },
+                  footer: { text: $footer },
+                  timestamp: $timestamp
+                }]
+              }' > build_success.json
+
+            JAR_FILE=$(find build/libs -maxdepth 1 -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
+            if [ -n "$JAR_FILE" ] && [ -f "$JAR_FILE" ]; then
+              curl -s -X PATCH -F "payload_json=<build_success.json;type=application/json" -F "file=@$JAR_FILE" "${WEBHOOK_URL}/messages/${MSG_ID}?thread_id=${THREAD_ID}"
+            else
+              curl -s -X PATCH -H "Content-Type: application/json" -d @build_success.json "${WEBHOOK_URL}/messages/${MSG_ID}?thread_id=${THREAD_ID}"
+            fi
+          fi
+
+      # --- STEP 3B: NOTIFY BUILD FAILURE ---
+      - name: Notify Failure to Discord
+        if: failure()
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          HASH=$(git log -1 --pretty=%h)
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          
+          PIPELINE_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          [ -z "$(echo "$COMMIT_MSG" | tr -d '[:space:]')" ] && COMMIT_MSG="$FAIL_DESC_TEXT"
+
+          # EDIT MESSAGE ON FAILURE
+          if [ -n "$MSG_ID" ]; then
+            jq -n \
+              --arg url "$PIPELINE_URL" \
+              --arg footer "Build Failed • $HASH" \
+              --arg timestamp "$TIMESTAMP" \
+              --arg icon "$ICON_URL" \
+              --arg desc "$COMMIT_MSG" \
+              --argjson color "$COLOR_FAIL" \
+              '{ 
+                embeds: [{ 
+                  color: $color, 
+                  author: { name: "Build Failed ❌", icon_url: $icon }, 
+                  title: "Click here to view Pipeline Logs", 
+                  url: $url, 
+                  description: $desc, 
+                  footer: { text: $footer }, 
+                  timestamp: $timestamp 
+                }] 
+              }' > build_fail.json
+          
+            curl -s -X PATCH -H "Content-Type: application/json" -d @build_fail.json "${WEBHOOK_URL}/messages/${MSG_ID}?thread_id=${THREAD_ID}"
+          fi
+
+      # --- STEP 4: SAVE ARTIFACTS TO GITHUB ---
+      - name: Upload JAR Artifacts to GitHub
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SinceGPS-Build
+          path: build/libs/*.jar
+          retention-days: 7

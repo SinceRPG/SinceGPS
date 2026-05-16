@@ -2,11 +2,11 @@ package net.danh.sinceGPS.core;
 
 import org.bukkit.Location;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Node {
-    private int id;
+    private final int id;
     private Map<Integer, Double> edges;
     private Location location;
     private String group;
@@ -15,11 +15,11 @@ public class Node {
 
     public Node(int id, Location location, String group) {
         this.id = id;
-        this.location = location;
+        this.location = location.clone();
         this.group = group;
         this.name = "node_" + id;
         this.displayName = this.name;
-        this.edges = new HashMap<>();
+        this.edges = new ConcurrentHashMap<>();
     }
 
     public void connect(int targetId, double weight) {
@@ -32,10 +32,6 @@ public class Node {
 
     public int getId() {
         return id;
-    }
-
-    public void setId(int id) {
-        this.id = id;
     }
 
     public String getName() {
@@ -55,11 +51,11 @@ public class Node {
     }
 
     public Location getLocation() {
-        return location;
+        return location.clone();
     }
 
     public void setLocation(Location location) {
-        this.location = location;
+        this.location = location.clone();
     }
 
     public String getGroup() {
@@ -75,6 +71,6 @@ public class Node {
     }
 
     public void setEdges(Map<Integer, Double> edges) {
-        this.edges = edges;
+        this.edges = new ConcurrentHashMap<>(edges);
     }
 }

@@ -20,4 +20,8 @@ public class NodeGroup {
         if (permission == null || permission.isEmpty()) return true;
         return p.hasPermission(permission);
     }
+
+    public boolean hasNoPermission() {
+        return navigable && (permission == null || permission.isEmpty());
+    }
 }

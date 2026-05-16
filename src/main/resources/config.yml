@@ -20,6 +20,9 @@ settings:
   navigation:
     reroute-distance: 12.0
     check-interval: 20
+    lead-in-min-distance: 2.0
+    lead-in-step: 0.5
+    suggestion-threshold: 0.6
 
 visuals:
   view-distance: 60.0
@@ -30,6 +33,8 @@ visuals:
     pulse-type: DUST
     pulse-color: "255, 165, 0"
     pulse-speed: 1.5
+    particle-y-offset: 0.5
+    bossbar-scale-distance: 50.0
     arrow-enabled: true
     arrow-lookahead: 8
 
@@ -39,17 +44,18 @@ visuals:
     node-snap: SOUL_FIRE_FLAME
     edge-line: CRIT
     edge-density: 2.0
+    particle-y-offset: 0.5
     visualizer-range: 40.0
     update-interval: 20
 
 action-bar:
   enabled: true
   arrows:
-    forward: "⬆"
-    left: "⬅"
-    right: "➡"
-    backward: "⬇"
-  format: "<yellow><bold><arrow> <white>Đi về phía trước <gold><dist>m"
+    forward: "UP"
+    left: "LEFT"
+    right: "RIGHT"
+    backward: "BACK"
+  format: "<yellow><bold><arrow> <white>Go forward <gold><dist>m"
 
 groups:
   default:

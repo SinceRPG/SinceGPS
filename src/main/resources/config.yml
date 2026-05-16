@@ -1,92 +1,195 @@
+# SinceGPS configuration.
+# All distances are in blocks unless a setting explicitly says it uses ticks.
+# 20 ticks is normally 1 second. Lower update intervals are smoother but cost more CPU/entities.
+
 database:
+  # SQLite file stored inside the plugin data folder.
   file: "database.db"
+  # Prefix for all SQLite tables. Change this only before creating your database.
   table-prefix: "sincegps_"
 
 settings:
+  # Maximum distance used when finding the closest GPS node to a player.
   nearest-node-search-range: 100.0
+  # The player is considered arrived when they are within this distance of the final destination.
   reach-distance: 3.0
+  # Navigation refresh interval in ticks. 1 is very smooth; increase this to reduce load.
   update-rate: 1
 
   algorithm:
+    # Number of interpolated points between route nodes. Higher values make smoother particle paths.
     curve-resolution: 8
+    # Removes recorder nodes when the angle is smaller than this value.
     optimization-angle: 5.0
+    # How far ahead in the computed route the session searches for the closest path point.
     smart-search-range: 100
 
   recorder:
+    # Minimum movement distance before recorder creates a new node.
     min-distance: 8.0
+    # Recorder creates a new node earlier if the player turns more sharply than this angle.
     angle-threshold: 15.0
+    # Recorder snaps to existing nearby nodes inside this distance.
     snap-distance: 3.0
 
   navigation:
+    # If the player is farther than this from the active path, the route is recalculated.
     reroute-distance: 12.0
+    # How often reroute checks run, in ticks.
     check-interval: 20
+    # Adds a short visual connection from the player's feet to the first route point if farther than this.
     lead-in-min-distance: 2.0
+    # Distance between points in the lead-in visual path.
     lead-in-step: 0.5
+    # Minimum Jaro-Winkler score for "Did you mean" destination suggestions.
     suggestion-threshold: 0.6
+    # Virtual edge weight used for connections across different worlds.
+    cross-world-edge-weight: 25.0
 
 visuals:
+  # Maximum particle route length rendered around the player.
   view-distance: 60.0
 
   navigation:
+    # Particle used for the normal route line.
     path-type: DUST
+    # RGB color for DUST route particles.
     path-color: "0, 255, 255"
+    # Particle used for the moving pulse and particle arrow.
     pulse-type: DUST
+    # RGB color for DUST pulse particles.
     pulse-color: "255, 165, 0"
+    # Speed of the moving pulse along the route.
     pulse-speed: 1.5
+    # Vertical particle offset above the path.
     particle-y-offset: 0.5
+    # Higher values make bossbar progress decrease more slowly with distance.
     bossbar-scale-distance: 50.0
+    # Enables the lightweight particle arrow. The block-display arrow is controlled below.
     arrow-enabled: true
+    # How far ahead the particle arrow/actionbar looks when choosing a direction.
     arrow-lookahead: 8
 
+  arrow:
+    # Enables the block-display GPS arrow that follows the player.
+    enabled: true
+    # Any valid block material or block data string, for example QUARTZ_BLOCK or minecraft:red_wool.
+    block: QUARTZ_BLOCK
+    # Hides arrow entities from other players using Bukkit visibility APIs.
+    hide-from-others: true
+    # Re-applies visibility every N ticks so players who enter tracking range do not see another player's arrow.
+    visibility-refresh-interval: 20
+    # Display entity scale for every block in the arrow.
+    block-scale: 0.55
+    # Space between display blocks in the arrow shape.
+    spacing: 0.42
+    position:
+      # Default distance in front of the player's camera.
+      forward: 4.0
+      # Default height above the player's location.
+      up: 2.6
+    move:
+      # /gps move scroll adjustment amount. Sneak-scroll changes height instead of forward distance.
+      step: 0.25
+    interpolation:
+      # Display interpolation duration in ticks. Small values look responsive.
+      duration: 1
+      # Delay before interpolation begins.
+      delay: 0
+    shaft:
+      # Number of block rows in the arrow shaft.
+      length: 5
+      # Width of the arrow shaft.
+      width: 1
+    head:
+      # Number of block rows in the arrow head.
+      length: 2
+      # Starting width of the arrow head.
+      width: 5
+    header:
+      # Shows floating distance text above the block arrow.
+      enabled: true
+      # Header text. Use <dist> for remaining distance.
+      format: "<green><dist> blocks to destination"
+      # Height above the arrow body.
+      up: 0.9
+      # Makes the text readable through blocks.
+      see-through: true
+      # Adds text shadow.
+      shadow: true
+
   recorder:
+    # Particle used for existing nodes in graph preview/record mode.
     node-normal: FLAME
+    # Particle used when recorder creates a new node.
     node-new: HAPPY_VILLAGER
+    # Particle used when recorder snaps to an existing node.
     node-snap: SOUL_FIRE_FLAME
+    # Particle used for connection lines in graph preview/record mode.
     edge-line: CRIT
+    # Distance between particles on connection lines. Lower is denser and more expensive.
     edge-density: 2.0
+    # Vertical offset for recorder and preview particles.
     particle-y-offset: 0.5
+    # Preview radius around the player.
     visualizer-range: 40.0
+    # Preview refresh interval in ticks.
     update-interval: 20
 
 action-bar:
+  # Enables the simple actionbar direction hint.
   enabled: true
   arrows:
+    # Text shown when destination is mostly forward.
     forward: "UP"
+    # Text shown when destination is to the left.
     left: "LEFT"
+    # Text shown when destination is to the right.
     right: "RIGHT"
+    # Text shown when destination is behind the player.
     backward: "BACK"
+  # Actionbar format. Use <arrow> and <dist>.
   format: "<yellow><bold><arrow> <white>Go forward <gold><dist>m"
 
 groups:
   default:
+    # Empty permission means every player can navigate to this group.
     permission: ""
+    # If false, destinations in this group cannot be navigated to.
     navigable: true
   admin:
+    # Permission required for nodes assigned to this group.
     permission: "gps.group.admin"
+    # If false, destinations in this group cannot be navigated to.
     navigable: true
 
 sounds:
   start:
+    # Played when navigation or recording starts.
     enabled: true
     type: BLOCK_BEACON_ACTIVATE
     volume: 1.0
     pitch: 2.0
   stop:
+    # Played when navigation or recording stops.
     enabled: true
     type: BLOCK_NOTE_BLOCK_BASS
     volume: 1.0
     pitch: 0.5
   arrive:
+    # Played when the player reaches the destination.
     enabled: true
     type: UI_TOAST_CHALLENGE_COMPLETE
     volume: 1.0
     pitch: 1.0
   popup:
+    # Played when the plugin suggests a similar destination.
     enabled: true
     type: ENTITY_VILLAGER_NO
     volume: 1.0
     pitch: 1.0
   snap:
+    # Played when recorder snaps to an existing route node.
     enabled: true
     type: BLOCK_NOTE_BLOCK_PLING
     volume: 1.0

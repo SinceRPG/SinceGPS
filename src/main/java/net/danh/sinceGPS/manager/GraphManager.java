@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,7 +26,8 @@ public class GraphManager {
     private final Map<Integer, Node> nodes = new ConcurrentHashMap<>();
     private final Map<String, Integer> nameIndex = new ConcurrentHashMap<>();
     private final Map<String, NodeGroup> groups = new ConcurrentHashMap<>();
-    private final Map<UUID, List<Integer>> recorders = new ConcurrentHashMap<>();
+    private final Map<UUID, RecorderSession> recorders = new ConcurrentHashMap<>();
+    private final Set<UUID> previewers = ConcurrentHashMap.newKeySet();
     private final Map<UUID, SchedulerAdapter.TaskHandle> visualizerTasks = new ConcurrentHashMap<>();
     private final SQLiteStorage database;
     private int nextId = 0;
@@ -66,9 +68,46 @@ public class GraphManager {
         Node first = nodes.get(id1);
         Node second = nodes.get(id2);
         if (first == null || second == null) return;
-        double distance = first.getLocation().distance(second.getLocation());
+        double distance = getEdgeWeight(first.getLocation(), second.getLocation());
         first.connect(id2, distance);
         if (!oneWay) second.connect(id1, distance);
+    }
+
+    public void disconnect(int id1, int id2, boolean oneWay) {
+        Node first = nodes.get(id1);
+        Node second = nodes.get(id2);
+        if (first == null || second == null) return;
+        first.disconnect(id2);
+        if (!oneWay) second.disconnect(id1);
+    }
+
+    public boolean moveNode(int id, Location location) {
+        Node node = nodes.get(id);
+        if (node == null) return false;
+        node.setLocation(location);
+        recalculateEdges(id);
+        return true;
+    }
+
+    private void recalculateEdges(int id) {
+        Node node = nodes.get(id);
+        if (node == null) return;
+        for (Map.Entry<Integer, Double> edge : new HashMap<>(node.getEdges()).entrySet()) {
+            Node target = nodes.get(edge.getKey());
+            if (target != null) node.connect(target.getId(), getEdgeWeight(node.getLocation(), target.getLocation()));
+        }
+        for (Node source : nodes.values()) {
+            if (source.getEdges().containsKey(id)) {
+                source.connect(id, getEdgeWeight(source.getLocation(), node.getLocation()));
+            }
+        }
+    }
+
+    private double getEdgeWeight(Location first, Location second) {
+        if (first.getWorld() != null && first.getWorld().equals(second.getWorld())) {
+            return first.distance(second);
+        }
+        return plugin.getCfg().getDouble("settings.navigation.cross-world-edge-weight", 25.0);
     }
 
     public Node getNode(int id) {
@@ -124,47 +163,53 @@ public class GraphManager {
     public void toggleRecord(Player player) {
         UUID playerId = player.getUniqueId();
         if (recorders.containsKey(playerId)) {
-            stopRecorder(player);
+            stopRecording(player, true);
             return;
         }
 
-        List<Integer> session = new ArrayList<>();
+        RecorderSession session = new RecorderSession();
         Node startNode = getNearestNode(player.getLocation(), recordSnapDistance);
         if (startNode == null) {
             startNode = createNode(player.getLocation(), "default");
+            session.createdIds().add(startNode.getId());
         } else {
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-snap")
                     .replace("<id>", String.valueOf(startNode.getId()))));
         }
 
-        session.add(startNode.getId());
+        session.pathIds().add(startNode.getId());
         recorders.put(playerId, session);
         startVisualizer(player);
         player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-started")));
         plugin.getCfg().playSound(player, "sounds.start");
     }
 
-    private void stopRecorder(Player player) {
+    public void stopRecording(Player player, boolean saveFinishedRoute) {
         UUID playerId = player.getUniqueId();
         cancelVisualizer(playerId);
-        List<Integer> session = recorders.remove(playerId);
+        RecorderSession session = recorders.remove(playerId);
         if (session == null) return;
 
-        if (session.size() < 2) {
-            session.forEach(this::removeNode);
+        if (!saveFinishedRoute) {
+            session.createdIds().forEach(this::removeNode);
+            return;
+        }
+
+        if (session.pathIds().size() < 2) {
+            session.createdIds().forEach(this::removeNode);
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-too-short")));
             return;
         }
 
         int removed = optimizePath(session);
-        if (!session.isEmpty()) {
-            int startId = session.get(0);
+        if (!session.pathIds().isEmpty()) {
+            int startId = session.pathIds().get(0);
             Node startNode = getNode(startId);
             if (startNode != null && startNode.getName().equals("node_" + startId)) {
                 renameNode(startNode, "start_" + startId);
             }
 
-            int endId = session.get(session.size() - 1);
+            int endId = session.pathIds().get(session.pathIds().size() - 1);
             Node endNode = getNode(endId);
             if (endNode != null && endNode.getName().equals("node_" + endId)) {
                 renameNode(endNode, "stop_" + endId);
@@ -194,11 +239,22 @@ public class GraphManager {
         return recorders.containsKey(player.getUniqueId());
     }
 
-    public void handleMoveRecord(Player player) {
-        List<Integer> session = recorders.get(player.getUniqueId());
-        if (session == null || session.isEmpty()) return;
+    public boolean togglePreview(Player player) {
+        UUID playerId = player.getUniqueId();
+        if (previewers.remove(playerId)) {
+            if (!isRecording(player)) cancelVisualizer(playerId);
+            return false;
+        }
+        previewers.add(playerId);
+        startVisualizer(player);
+        return true;
+    }
 
-        int lastId = session.get(session.size() - 1);
+    public void handleMoveRecord(Player player) {
+        RecorderSession session = recorders.get(player.getUniqueId());
+        if (session == null || session.pathIds().isEmpty()) return;
+
+        int lastId = session.pathIds().get(session.pathIds().size() - 1);
         Node lastNode = getNode(lastId);
         if (lastNode == null) return;
 
@@ -219,9 +275,9 @@ public class GraphManager {
         if (!shouldCreate) return;
 
         Node snap = getNearestNode(playerLocation, recordSnapDistance);
-        if (snap != null && !session.contains(snap.getId())) {
+        if (snap != null && !session.pathIds().contains(snap.getId())) {
             connect(lastId, snap.getId(), false);
-            session.add(snap.getId());
+            session.pathIds().add(snap.getId());
             player.spawnParticle(particleSnap, snap.getLocation().add(0, recorderParticleYOffset, 0), 10);
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("record-snap")
                     .replace("<id>", String.valueOf(snap.getId()))));
@@ -231,11 +287,13 @@ public class GraphManager {
 
         Node node = createNode(playerLocation, "default");
         connect(lastId, node.getId(), false);
-        session.add(node.getId());
+        session.pathIds().add(node.getId());
+        session.createdIds().add(node.getId());
         player.spawnParticle(particleNew, playerLocation.clone().add(0, recorderParticleYOffset, 0), 1);
     }
 
-    private int optimizePath(List<Integer> ids) {
+    private int optimizePath(RecorderSession session) {
+        List<Integer> ids = session.pathIds();
         if (ids.size() < 3) return 0;
         int removed = 0;
         for (int i = 1; i < ids.size() - 1; i++) {
@@ -250,7 +308,9 @@ public class GraphManager {
 
             if (Math.toDegrees(firstVector.normalize().angle(secondVector.normalize())) < optimizeAngle) {
                 connect(previous.getId(), next.getId(), false);
-                removeNode(current.getId());
+                if (session.createdIds().remove(current.getId())) {
+                    removeNode(current.getId());
+                }
                 ids.remove(i);
                 i--;
                 removed++;
@@ -272,7 +332,7 @@ public class GraphManager {
     }
 
     private void renderRecorderVisualizer(Player player) {
-        if (!player.isOnline() || !isRecording(player)) {
+        if (!player.isOnline() || (!isRecording(player) && !previewers.contains(player.getUniqueId()))) {
             cancelVisualizer(player.getUniqueId());
             return;
         }
@@ -381,6 +441,7 @@ public class GraphManager {
     private void cancelAllVisualizers() {
         visualizerTasks.values().forEach(SchedulerAdapter.TaskHandle::cancel);
         visualizerTasks.clear();
+        previewers.clear();
     }
 
     public void shutdown() {
@@ -388,5 +449,11 @@ public class GraphManager {
         recorders.clear();
         save();
         database.close();
+    }
+
+    private record RecorderSession(List<Integer> pathIds, Set<Integer> createdIds) {
+        private RecorderSession() {
+            this(new ArrayList<>(), ConcurrentHashMap.newKeySet());
+        }
     }
 }

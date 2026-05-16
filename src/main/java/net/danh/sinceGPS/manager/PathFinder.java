@@ -20,10 +20,6 @@ public class PathFinder {
 
     public static List<Location> findPath(Node start, Node end, GraphManager graph) {
         if (start == null || end == null) return null;
-        if (start.getLocation().getWorld() == null || end.getLocation().getWorld() == null
-                || !start.getLocation().getWorld().equals(end.getLocation().getWorld())) {
-            return null;
-        }
 
         Map<Integer, Double> gScore = new HashMap<>();
         Map<Integer, Double> fScore = new HashMap<>();
@@ -33,7 +29,7 @@ public class PathFinder {
                 Comparator.comparingDouble(id -> fScore.getOrDefault(id, Double.MAX_VALUE)));
 
         gScore.put(start.getId(), 0.0);
-        fScore.put(start.getId(), start.getLocation().distance(end.getLocation()));
+        fScore.put(start.getId(), heuristic(start.getLocation(), end.getLocation()));
         open.add(start.getId());
 
         while (!open.isEmpty()) {
@@ -53,7 +49,7 @@ public class PathFinder {
                 if (tentativeG < gScore.getOrDefault(neighborId, Double.MAX_VALUE)) {
                     cameFrom.put(neighborId, currentId);
                     gScore.put(neighborId, tentativeG);
-                    fScore.put(neighborId, tentativeG + neighbor.getLocation().distance(end.getLocation()));
+                    fScore.put(neighborId, tentativeG + heuristic(neighbor.getLocation(), end.getLocation()));
                     open.add(neighborId);
                 }
             }
@@ -77,6 +73,26 @@ public class PathFinder {
     public static List<Location> smoothPath(List<Location> points, int quality) {
         if (points.size() < 2) return List.copyOf(points);
 
+        List<Location> result = new ArrayList<>();
+        List<Location> segment = new ArrayList<>();
+        for (Location point : points) {
+            if (!segment.isEmpty() && !sameWorld(segment.get(segment.size() - 1), point)) {
+                appendSmoothedSegment(result, segment, quality);
+                segment.clear();
+            }
+            segment.add(point);
+        }
+        appendSmoothedSegment(result, segment, quality);
+        return result;
+    }
+
+    private static void appendSmoothedSegment(List<Location> result, List<Location> points, int quality) {
+        if (points.isEmpty()) return;
+        if (points.size() < 2) {
+            result.add(points.get(0).clone());
+            return;
+        }
+
         int safeQuality = Math.max(1, quality);
         List<Location> smooth = new ArrayList<>();
         List<Vector> vectors = new ArrayList<>();
@@ -98,7 +114,10 @@ public class PathFinder {
             }
         }
         smooth.add(points.get(points.size() - 1).clone());
-        return smooth;
+        if (!result.isEmpty() && !smooth.isEmpty() && result.get(result.size() - 1).equals(smooth.get(0))) {
+            smooth.remove(0);
+        }
+        result.addAll(smooth);
     }
 
     public static double estimateDistance(List<Location> path) {
@@ -106,11 +125,20 @@ public class PathFinder {
         for (int i = 1; i < path.size(); i++) {
             Location previous = path.get(i - 1);
             Location current = path.get(i);
-            if (previous.getWorld() != null && previous.getWorld().equals(current.getWorld())) {
+            if (sameWorld(previous, current)) {
                 distance += previous.distance(current);
             }
         }
         return distance;
+    }
+
+    private static double heuristic(Location first, Location second) {
+        if (!sameWorld(first, second)) return 0.0;
+        return first.distance(second);
+    }
+
+    private static boolean sameWorld(Location first, Location second) {
+        return first.getWorld() != null && first.getWorld().equals(second.getWorld());
     }
 
     private static Vector getCatmullRom(double t, Vector p0, Vector p1, Vector p2, Vector p3) {

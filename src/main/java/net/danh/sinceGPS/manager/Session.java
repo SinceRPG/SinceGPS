@@ -20,6 +20,7 @@ public class Session {
     private final Player player;
     private final Node targetNode;
     private final BossBar bossBar;
+    private final GpsArrow gpsArrow;
     private final Runnable finishCallback;
     private final AtomicBoolean rerouting = new AtomicBoolean(false);
     private final AtomicBoolean cleaned = new AtomicBoolean(false);
@@ -76,6 +77,7 @@ public class Session {
 
         this.bossBar = BossBar.bossBar(Component.empty(), 1.0f, BossBar.Color.BLUE, BossBar.Overlay.PROGRESS);
         player.showBossBar(bossBar);
+        this.gpsArrow = new GpsArrow(plugin, player);
     }
 
     public void start(long periodTicks) {
@@ -112,8 +114,15 @@ public class Session {
             lastRerouteCheck = System.currentTimeMillis();
         }
 
-        double distToEnd = playerLoc.distance(path.get(path.size() - 1));
-        if (distToEnd < reachDist) {
+        Location activeDestination = getActiveDestination(playerLoc);
+        Location finalDestination = path.get(path.size() - 1);
+        if (!sameWorld(playerLoc, activeDestination)) {
+            triggerReroute(playerLoc);
+            return false;
+        }
+        boolean finalWorld = sameWorld(playerLoc, finalDestination);
+        double distToEnd = playerLoc.distance(activeDestination);
+        if (finalWorld && distToEnd < reachDist) {
             player.sendMessage(ColorUtils.parseWithPrefix(plugin.getMsg().getString("arrived")));
             plugin.getCfg().playSound(player, "sounds.arrive");
             return true;
@@ -124,6 +133,7 @@ public class Session {
         bossBar.progress((float) Math.max(0, Math.min(1, 1 - (distToEnd / (distToEnd + bossBarScaleDistance)))));
 
         renderParticles(playerLoc);
+        gpsArrow.update(playerLoc, activeDestination, distToEnd);
         renderActionBar(playerLoc);
         return false;
     }
@@ -164,21 +174,21 @@ public class Session {
         int view = (int) plugin.getCfg().getDouble("visuals.view-distance", 60.0);
         int end = Math.min(pathIndex + view * 2, path.size());
 
-        for (int i = pathIndex; i < end; i += 2) spawnParticle(path.get(i), particleType, pathColor);
+        for (int i = pathIndex; i < end; i += 2) spawnParticle(playerLoc, path.get(i), particleType, pathColor);
 
         pulseOffset += pulseSpeed;
         if (pulseOffset > view * 2) pulseOffset = 0;
 
         int pulseIndex = pathIndex + (int) pulseOffset;
         if (pulseIndex < path.size()) {
-            spawnParticle(path.get(pulseIndex), pulseParticleType, pulseColor);
-            if (pulseIndex > 0) spawnParticle(path.get(pulseIndex - 1), pulseParticleType, pulseColor);
+            spawnParticle(playerLoc, path.get(pulseIndex), pulseParticleType, pulseColor);
+            if (pulseIndex > 0) spawnParticle(playerLoc, path.get(pulseIndex - 1), pulseParticleType, pulseColor);
         }
 
         if (!arrowEnabled || path.size() <= 1) return;
 
-        int arrowIndex = Math.min(pathIndex + arrowLookahead, path.size() - 1);
-        Vector direction = path.get(arrowIndex).toVector().subtract(playerLoc.toVector());
+        Location arrowTarget = getActiveDestination(playerLoc);
+        Vector direction = arrowTarget.toVector().subtract(playerLoc.toVector());
         if (direction.lengthSquared() <= 0.0001) return;
 
         direction.normalize();
@@ -188,15 +198,15 @@ public class Session {
 
         cross.normalize().multiply(0.5);
         Vector back = direction.clone().multiply(-0.5);
-        spawnParticle(center, pulseParticleType, pulseColor);
-        spawnParticle(center.clone().add(back).add(cross), pulseParticleType, pulseColor);
-        spawnParticle(center.clone().add(back).subtract(cross), pulseParticleType, pulseColor);
+        spawnParticle(playerLoc, center, pulseParticleType, pulseColor);
+        spawnParticle(playerLoc, center.clone().add(back).add(cross), pulseParticleType, pulseColor);
+        spawnParticle(playerLoc, center.clone().add(back).subtract(cross), pulseParticleType, pulseColor);
     }
 
     private void renderActionBar(Location playerLoc) {
         if (!plugin.getCfg().getBoolean("action-bar.enabled")) return;
 
-        Location next = path.get(Math.min(pathIndex + arrowLookahead, path.size() - 1));
+        Location next = getActiveDestination(playerLoc);
         Vector routeDirection = next.toVector().subtract(playerLoc.toVector()).setY(0);
         Vector playerDirection = playerLoc.getDirection().setY(0);
         if (routeDirection.lengthSquared() <= 0.0001 || playerDirection.lengthSquared() <= 0.0001) return;
@@ -214,14 +224,15 @@ public class Session {
         else if (angle > -135 && angle <= -45) arrow = arrowLeft;
         else arrow = arrowBack;
 
-        double distance = playerLoc.distance(path.get(path.size() - 1));
+        double distance = playerLoc.distance(getActiveDestination(playerLoc));
         String message = plugin.getCfg().getString("action-bar.format")
                 .replace("<arrow>", arrow)
                 .replace("<dist>", String.format("%.1f", distance));
         player.sendActionBar(ColorUtils.parse(message));
     }
 
-    private void spawnParticle(Location location, Particle particle, Particle.DustOptions dust) {
+    private void spawnParticle(Location playerLocation, Location location, Particle particle, Particle.DustOptions dust) {
+        if (!sameWorld(playerLocation, location)) return;
         try {
             Location particleLocation = location.clone().add(0, particleYOffset, 0);
             if (particle == Particle.DUST) {
@@ -259,9 +270,27 @@ public class Session {
         }
     }
 
+    private Location getActiveDestination(Location playerLocation) {
+        Location lastSameWorld = null;
+        for (int i = pathIndex; i < path.size(); i++) {
+            Location point = path.get(i);
+            if (sameWorld(playerLocation, point)) {
+                lastSameWorld = point;
+                continue;
+            }
+            if (lastSameWorld != null) return lastSameWorld;
+        }
+        return lastSameWorld != null ? lastSameWorld : path.get(path.size() - 1);
+    }
+
+    private boolean sameWorld(Location first, Location second) {
+        return first.getWorld() != null && first.getWorld().equals(second.getWorld());
+    }
+
     public void cleanup() {
         if (!cleaned.compareAndSet(false, true)) return;
         taskHandle.cancel();
+        gpsArrow.cleanup();
         player.hideBossBar(bossBar);
     }
 }

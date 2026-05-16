@@ -10,6 +10,7 @@ import org.bukkit.util.Vector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -17,6 +18,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public class NavigationManager {
     private final SinceGPS plugin;
     private final Map<UUID, Session> activeSessions = new ConcurrentHashMap<>();
+    private final Map<UUID, ArrowOffset> arrowOffsets = new ConcurrentHashMap<>();
+    private final Set<UUID> arrowMoveMode = ConcurrentHashMap.newKeySet();
 
     public NavigationManager(SinceGPS plugin) {
         this.plugin = plugin;
@@ -76,6 +79,38 @@ public class NavigationManager {
         }
     }
 
+    public boolean toggleMoveMode(Player player) {
+        UUID playerId = player.getUniqueId();
+        if (arrowMoveMode.remove(playerId)) return false;
+        arrowMoveMode.add(playerId);
+        return true;
+    }
+
+    public boolean isMoveMode(Player player) {
+        return arrowMoveMode.contains(player.getUniqueId());
+    }
+
+    public void adjustArrowOffset(Player player, int slotDelta) {
+        if (slotDelta == 0 || !isMoveMode(player)) return;
+
+        double step = plugin.getCfg().getDouble("visuals.arrow.move.step", 0.25);
+        ArrowOffset current = arrowOffsets.getOrDefault(player.getUniqueId(), ArrowOffset.ZERO);
+        if (player.isSneaking()) {
+            arrowOffsets.put(player.getUniqueId(), new ArrowOffset(current.forward(), current.up() + slotDelta * step));
+        } else {
+            arrowOffsets.put(player.getUniqueId(), new ArrowOffset(current.forward() + slotDelta * step, current.up()));
+        }
+    }
+
+    public ArrowOffset getArrowOffset(Player player) {
+        return arrowOffsets.getOrDefault(player.getUniqueId(), ArrowOffset.ZERO);
+    }
+
+    public void clearPlayerState(UUID playerId) {
+        arrowMoveMode.remove(playerId);
+        arrowOffsets.remove(playerId);
+    }
+
     public List<Location> addLeadIn(Location currentLoc, List<Location> route) {
         List<Location> result = new ArrayList<>(route);
         if (result.isEmpty()) return result;
@@ -115,5 +150,11 @@ public class NavigationManager {
     public void shutdown() {
         activeSessions.values().forEach(Session::cleanup);
         activeSessions.clear();
+        arrowMoveMode.clear();
+        arrowOffsets.clear();
+    }
+
+    public record ArrowOffset(double forward, double up) {
+        public static final ArrowOffset ZERO = new ArrowOffset(0.0, 0.0);
     }
 }

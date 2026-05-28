@@ -118,6 +118,41 @@ visuals:
       # Adds text shadow.
       shadow: true
 
+  tracking:
+    # Shows an offscreen destination indicator in front of the player's camera.
+    enabled: true
+    # Hides the indicator from other players using Bukkit visibility APIs.
+    hide-from-others: true
+    # Re-applies visibility every N ticks so players who enter tracking range do not see another player's indicator.
+    visibility-refresh-interval: 20
+    # If false, the indicator only appears when the current route target is outside the player's view.
+    show-when-onscreen: true
+    # Indicator text. Use <arrow> and <dist>.
+    format: "<gold><bold><arrow></bold> <white><dist>m"
+    arrows:
+      up: "^"
+      down: "v"
+      left: "<"
+      right: ">"
+      center: "*"
+    # Distance in front of the player's eyes where the TextDisplay is placed.
+    distance-from-camera: 2.2
+    # Maximum camera-plane offsets for the edge indicator.
+    horizontal-limit: 1.15
+    vertical-limit: 0.62
+    # Angles considered visible in the center of the screen.
+    onscreen-horizontal-angle: 38.0
+    onscreen-vertical-angle: 24.0
+    # Makes the text readable through blocks.
+    see-through: true
+    # Adds text shadow.
+    shadow: true
+    interpolation:
+      # Display interpolation duration in ticks. Small values look responsive.
+      duration: 1
+      # Delay before interpolation begins.
+      delay: 0
+
   recorder:
     # Particle used for existing nodes in graph preview/record mode.
     node-normal: FLAME

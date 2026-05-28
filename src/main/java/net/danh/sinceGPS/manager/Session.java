@@ -21,6 +21,7 @@ public class Session {
     private final Node targetNode;
     private final BossBar bossBar;
     private final GpsArrow gpsArrow;
+    private final TrackingIndicator trackingIndicator;
     private final Runnable finishCallback;
     private final AtomicBoolean rerouting = new AtomicBoolean(false);
     private final AtomicBoolean cleaned = new AtomicBoolean(false);
@@ -78,6 +79,7 @@ public class Session {
         this.bossBar = BossBar.bossBar(Component.empty(), 1.0f, BossBar.Color.BLUE, BossBar.Overlay.PROGRESS);
         player.showBossBar(bossBar);
         this.gpsArrow = new GpsArrow(plugin, player);
+        this.trackingIndicator = new TrackingIndicator(plugin, player);
     }
 
     public void start(long periodTicks) {
@@ -134,6 +136,7 @@ public class Session {
 
         renderParticles(playerLoc);
         gpsArrow.update(playerLoc, activeDestination, distToEnd);
+        trackingIndicator.update(playerLoc, activeDestination, distToEnd);
         renderActionBar(playerLoc);
         return false;
     }
@@ -291,6 +294,7 @@ public class Session {
         if (!cleaned.compareAndSet(false, true)) return;
         taskHandle.cancel();
         gpsArrow.cleanup();
+        trackingIndicator.cleanup();
         player.hideBossBar(bossBar);
     }
 }

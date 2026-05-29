@@ -144,7 +144,7 @@ jobs:
                 }]
               }' > build_success.json
 
-            JAR_FILE=$(find build/libs -maxdepth 1 -name "*-all.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
+            JAR_FILE=$(find build/libs -maxdepth 1 -name "*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)
             if [ -n "$JAR_FILE" ] && [ -f "$JAR_FILE" ]; then
               COMMIT_COUNT=$(git rev-list --count HEAD)
               mkdir -p discord_upload
